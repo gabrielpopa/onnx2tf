@@ -1300,14 +1300,19 @@ def convert(
                 import traceback
                 error(traceback.format_exc(), prefix=False)
 
+        info(Color.REVERSE(f'Create concrete func'), '=' * 58)
         # Create concrete func
         run_model = tf.function(
             func=lambda *inputs : model(inputs),
             input_signature=[tf.TensorSpec(tensor.shape, tensor.dtype, tensor.name) for tensor in model.inputs],
         )
+
+
         concrete_func = run_model.get_concrete_function()
+        info(Color.GREEN(f'Create concrete func!'))
 
         SIGNATURE_KEY = 'serving_default'
+
 
         # saved_model
         try:
@@ -1324,8 +1329,10 @@ def convert(
                     input_signature=[tf.TensorSpec(tensor.shape, tensor.dtype, tensor.name) for tensor in model.inputs],
                 )
                 export_archive.write_out(output_folder_path)
+
             info(Color.GREEN(f'saved_model output complete!'))
         except TypeError as e:
+            raise e
             # Switch to .pb
             info(Color.GREEN(f'Switch to the output of an optimized protocol buffer file (.pb).'))
         except (KeyError, AssertionError) as e:
@@ -1429,9 +1436,15 @@ def convert(
         Version: 22.10.26
         """
 
-        converter_int8 = tf.lite.TFLiteConverter.from_concrete_functions(
-            [concrete_func]
-        )
+        if not output_signaturedefs and not output_integer_quantized_tflite:
+            info(Color.GREEN(f'Int8 tflite from concrete_func!'))
+            converter_int8 = tf.lite.TFLiteConverter.from_concrete_functions(
+                [concrete_func]
+            )
+        else:
+            info(Color.GREEN(f'Int8 tflite from saved_model!'))
+            converter_int8 = tf.lite.TFLiteConverter.from_saved_model(output_folder_path)
+            
         converter_int8.optimizations = [tf.lite.Optimize.DEFAULT]
         converter_int8.target_spec.supported_ops = [
             tf.lite.OpsSet.TFLITE_BUILTINS,
@@ -1456,15 +1469,19 @@ def convert(
         info(Color.GREEN(f'Int8 tflite output complete!'))
 
 
-        converter = tf.lite.TFLiteConverter.from_concrete_functions(
-            [concrete_func]
-        )
+        if not output_signaturedefs and not output_integer_quantized_tflite:
+            converter = tf.lite.TFLiteConverter.from_concrete_functions(
+                [concrete_func]
+            )
+        else:
+            converter = tf.lite.TFLiteConverter.from_saved_model(output_folder_path)
         converter.target_spec.supported_ops = [
             tf.lite.OpsSet.TFLITE_BUILTINS,
             tf.lite.OpsSet.SELECT_TF_OPS,
         ]
         converter.unfold_batchmatmul = enable_batchmatmul_unfold
         tflite_model = converter.convert()
+
         with open(f'{output_folder_path}/{output_file_name}_float32.tflite', 'wb') as w:
             w.write(tflite_model)
         if copy_onnx_input_output_names_to_tflite:

@@ -1351,7 +1351,6 @@ def convert(
             input_signature=[tf.TensorSpec(tensor.shape, tensor.dtype, tensor.name) for tensor in model.inputs],
         )
 
-
         concrete_func = run_model.get_concrete_function()
         info(Color.GREEN(f'Create concrete func!'))
 
@@ -1363,9 +1362,6 @@ def convert(
             # concrete_func
             info(Color.REVERSE(f'saved_model output started'), '=' * 58)
             if not output_signaturedefs and not output_integer_quantized_tflite:
-                tf.saved_model.save(model, output_folder_path)
-                # tf.saved_model.save(concrete_func, output_folder_path, save_format='h5')
-            else:
                 export_archive = tf_keras.export.ExportArchive()
                 export_archive.add_endpoint(
                     name=SIGNATURE_KEY,
@@ -1373,6 +1369,9 @@ def convert(
                     input_signature=[tf.TensorSpec(tensor.shape, tensor.dtype, tensor.name) for tensor in model.inputs],
                 )
                 export_archive.write_out(output_folder_path)
+            else:
+                tf.saved_model.save(model, output_folder_path)
+                # tf.saved_model.save(concrete_func, output_folder_path, save_format='h5')
 
             info(Color.GREEN(f'saved_model output complete!'))
         except TypeError as e:
@@ -1632,6 +1631,7 @@ def convert(
         # Quantized TFLite
         if output_integer_quantized_tflite:
             # Get signatures/input keys
+
             trackable_obj = \
                 tf.saved_model.load(
                     output_folder_path

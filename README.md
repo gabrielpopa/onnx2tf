@@ -310,6 +310,7 @@ Video speed is adjusted approximately 50 times slower than actual speed.
   -v `pwd`:/workdir \
   -w /workdir \
   ghcr.io/pinto0309/onnx2tf:1.27.10
+  Quantization without `--dgc`.)
 
   or
 
@@ -318,6 +319,7 @@ Video speed is adjusted approximately 50 times slower than actual speed.
   -v `pwd`:/workdir \
   -w /workdir \
   docker.io/pinto0309/onnx2tf:1.27.10
+  Quantization without `--dgc`.)
 
   or
 

@@ -40,12 +40,17 @@ jobs:
     strategy:
       fail-fast: false  # do not cancel even if any platform fails.
       matrix:
+<<<<<<< HEAD
         include:
           - platform: linux/amd64
             runner: ubuntu-latest
           - platform: linux/arm64
             runner: ubuntu-22.04-arm
     runs-on: ${{ matrix.runner }}
+=======
+        # platform: [linux/amd64,linux/arm64]
+        platform: [linux/amd64]
+>>>>>>> 349d7b3 (Temporary deletion arm64)
     steps:
       - name: Git checkout
         uses: actions/checkout@v3

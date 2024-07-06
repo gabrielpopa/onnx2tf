@@ -1407,7 +1407,7 @@ onnx2tf -i model.onnx -b 1 -osd
 
   ![image](https://github.com/PINTO0309/onnx2tf/assets/33194443/ccad4eaa-ce1d-46aa-80e9-9720467a3afb)
 
-<<<<<<< HEAD
+
 Click here to see how to perform inference using the dynamic shape tensor.
 
 https://github.com/PINTO0309/onnx2tf/tree/main?tab=readme-ov-file#14-inference-with-dynamic-tensors-in-tflite
@@ -1457,9 +1457,6 @@ For example, take a model with multiple inputs and multiple outputs as shown in 
 
 <details><summary>Click to expand</summary><div>
 
-=======
-### 18. Conversion to TensorFlow.js
->>>>>>> 530e95d (LLM, Sound models)
 When converting to TensorFlow.js, process as follows.
 
 ```bash
@@ -1482,16 +1479,12 @@ See: https://github.com/tensorflow/tfjs/tree/master/tfjs-converter
 
 ![image](https://user-images.githubusercontent.com/33194443/224186149-0b9ce9dc-fe09-48d4-b430-6cc3d0687140.png)
 
-<<<<<<< HEAD
 </div></details>
 
 ### 20. Conversion to CoreML
 
 <details><summary>Click to expand</summary><div>
 
-=======
-### 19. Conversion to CoreML
->>>>>>> 530e95d (LLM, Sound models)
 When converting to CoreML, process as follows. The `-k` option is for conversion while maintaining the input channel order in ONNX's NCHW format.
 
 ```bash

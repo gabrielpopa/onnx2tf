@@ -19,7 +19,7 @@ from onnx2tf.utils.common_functions import (
     transpose_with_flexing_deterrence,
 )
 from onnx2tf.utils.logging import *
-
+import tf_keras
 
 @print_node_info
 @inverted_operation_enable_disable
@@ -51,6 +51,7 @@ def make_node(
         graph_node_input,
         before_op_output_shape_trans,
     )
+    optype = tf_layers_dict[input_tensor.name]['optype']
     input_tensor = tf_layers_dict[input_tensor.name]['tf_node'] \
         if isinstance(input_tensor, gs.Variable) else input_tensor
     input_tensor_shape = input_tensor.shape
@@ -209,10 +210,13 @@ def make_node(
     # get corresponding function in TF
     if spatial_size == 1:
         conv_func = tf.nn.conv1d_transpose
+        conv_layer = tf_keras.layers.Conv1DTranspose
     elif spatial_size == 2:
         conv_func = tf.nn.conv2d_transpose
+        conv_layer = tf_keras.layers.Conv2DTranspose
     elif spatial_size == 3:
         conv_func = tf.nn.conv3d_transpose
+        conv_layer = tf_keras.layers.Conv3DTranspose
     else:
         error_msg = f'' +\
             Color.RED(f'ERROR:') + ' ' +\
@@ -242,16 +246,60 @@ def make_node(
             split_conv_output_shape = tf_output_shape[:-1] + [weight_split.shape[spatial_size]]
             # Normal ConvTranspose
             try:
-                conv_rs = conv_func(
-                    input=input_tensor_split,
-                    filters=weight_split \
-                        if not isinstance(weight_split, np.ndarray) \
-                            else tf.convert_to_tensor(weight_split),
-                    output_shape=split_conv_output_shape,
-                    strides=strides,
-                    padding=pad_mode,
-                    dilations=dilations,
-                )
+                t = tf.convert_to_tensor(input_tensor_split, dtype=tf.float32)
+
+                weight_split_ = weight_split \
+                    if not isinstance(weight_split, np.ndarray) \
+                        else tf.convert_to_tensor(weight_split)
+
+                # Extract the number of filters and kernel size from the weight tensor
+                num_filters = weight_split_.shape[-2]
+                kernel_size = weight_split_.shape[0:2]
+
+                use_bias = input_bias is not None
+
+                # turning off bias seems to increase accuracy
+                # todo: investigate why and if it can be turned back for some layers
+                use_bias = False
+
+                activation_mapping = {
+                    'Relu': 'linear',
+                    'Sigmoid': 'sigmoid',
+                    'Tanh': 'tanh',
+                    'Softmax': 'softmax',
+                    'Concat': 'linear',
+                }
+
+                activation_function = activation_mapping.get(optype, None)
+                # act = tf_keras.layers.ReLU(max_value=None, negative_slope=0.99999, threshold=0.0)
+                # act = tf_keras.layers.LeakyReLU(alpha=0.99999, name=graph_node.name)
+                act = tf.keras.layers.PReLU(alpha_initializer=tf.keras.initializers.Constant(value=1.00), shared_axes=[1, 2], name=graph_node.name) if spatial_size == 2 else tf.keras.layers.PReLU(shared_axes=[1, 2, 3], name=graph_node.name)
+
+                
+                conv_layer = conv_layer(
+                            filters=num_filters,
+                            kernel_size=kernel_shape,
+                            strides=strides, 
+                            padding=pad_mode, 
+                            dilation_rate=dilations,
+                            activation=act,
+                            data_format='channels_last',
+                            use_bias=use_bias,
+                        )
+                
+                conv_rs = conv_layer(input_tensor_split)
+                
+                if use_bias:
+                    if isinstance(act, tf.keras.layers.PReLU):
+                        conv_layer.set_weights([input_weights, input_bias, np.ones((1, 1, num_filters))])
+                    else:
+                        conv_layer.set_weights([input_weights, input_bias])
+                else:
+                    if isinstance(act, tf.keras.layers.PReLU):
+                        conv_layer.set_weights([input_weights, np.ones((1, 1, num_filters))])
+                    else:
+                        conv_layer.set_weights([input_weights])
+
             except Exception as ex1:
                 # Shape Unmatch Error Mitigation Measures
                 # Search for and transpose shapes that do not cause shape unmatch errors

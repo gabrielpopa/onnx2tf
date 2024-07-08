@@ -94,6 +94,7 @@ def convert(
     optimization_for_gpu_delegate: Optional[bool] = False,
     replace_argmax_to_reducemax_and_indices_is_int64: Optional[bool] = False,
     replace_argmax_to_reducemax_and_indices_is_float32: Optional[bool] = False,
+    replace_argmax_to_reducemax_new: Optional[bool] = False,
     replace_argmax_to_fused_argmax_and_indices_is_int64: Optional[bool] = False,
     replace_argmax_to_fused_argmax_and_indices_is_float32: Optional[bool] = False,
     fused_argmax_scale_ratio: Optional[float] = 0.5,
@@ -523,6 +524,7 @@ def convert(
     ra_option_list = [
         replace_argmax_to_reducemax_and_indices_is_int64,
         replace_argmax_to_reducemax_and_indices_is_float32,
+        replace_argmax_to_reducemax_new,
         replace_argmax_to_fused_argmax_and_indices_is_int64,
         replace_argmax_to_fused_argmax_and_indices_is_float32,
     ]
@@ -530,6 +532,7 @@ def convert(
         error(
             f'Only one of replace_argmax_to_reducemax_and_indices_is_int64 and ' +
             f'replace_argmax_to_reducemax_and_indices_is_float32 and ' +
+            f'replace_argmax_to_reducemax_new and ' +
             f'replace_argmax_to_fused_argmax_and_indices_is_int64 and ' +
             f'replace_argmax_to_fused_argmax_and_indices_is_float32 can be specified.'
         )
@@ -827,6 +830,7 @@ def convert(
         'optimization_for_gpu_delegate': optimization_for_gpu_delegate,
         'replace_argmax_to_reducemax_and_indices_is_int64': replace_argmax_to_reducemax_and_indices_is_int64,
         'replace_argmax_to_reducemax_and_indices_is_float32': replace_argmax_to_reducemax_and_indices_is_float32,
+        'replace_argmax_to_reducemax_new': replace_argmax_to_reducemax_new,
         'replace_argmax_to_fused_argmax_and_indices_is_int64': replace_argmax_to_fused_argmax_and_indices_is_int64,
         'replace_argmax_to_fused_argmax_and_indices_is_float32': replace_argmax_to_fused_argmax_and_indices_is_float32,
         'fused_argmax_scale_ratio': fused_argmax_scale_ratio,
@@ -1206,13 +1210,16 @@ def convert(
                 import traceback
                 error(traceback.format_exc(), prefix=False)
 
+        info(Color.REVERSE(f'Create concrete func'), '=' * 58)
         # Create concrete func
         run_model = tf.function(lambda *inputs : model(inputs))
         concrete_func = run_model.get_concrete_function(
             *[tf.TensorSpec(tensor.shape, tensor.dtype) for tensor in model.inputs]
         )
+        info(Color.GREEN(f'Create concrete func!'))
 
         SIGNATURE_KEY = 'serving_default'
+
 
         # saved_model
         try:
@@ -1224,6 +1231,7 @@ def convert(
                 tf.saved_model.save(model, output_folder_path)
             info(Color.GREEN(f'saved_model output complete!'))
         except TypeError as e:
+            raise e
             # Switch to .pb
             info(Color.GREEN(f'Switch to the output of an optimized protocol buffer file (.pb).'))
         except (KeyError, AssertionError) as e:
@@ -1287,15 +1295,53 @@ def convert(
         Name: flatbuffers
         Version: 22.10.26
         """
-        converter = tf.lite.TFLiteConverter.from_concrete_functions(
-            [concrete_func]
-        )
+
+        if not output_signaturedefs and not output_integer_quantized_tflite:
+            info(Color.GREEN(f'Int8 tflite from concrete_func!'))
+            converter_int8 = tf.lite.TFLiteConverter.from_concrete_functions(
+                [concrete_func]
+            )
+        else:
+            info(Color.GREEN(f'Int8 tflite from saved_model!'))
+            converter_int8 = tf.lite.TFLiteConverter.from_saved_model(output_folder_path)
+            
+        converter_int8.optimizations = [tf.lite.Optimize.DEFAULT]
+        converter_int8.target_spec.supported_ops = [
+            tf.lite.OpsSet.TFLITE_BUILTINS,
+            tf.lite.OpsSet.SELECT_TF_OPS,
+        ]
+
+        tflite_model = converter_int8.convert()
+        with open(f'{output_folder_path}/{output_file_name}_int8.tflite', 'wb') as w:
+            w.write(tflite_model)
+        if copy_onnx_input_output_names_to_tflite:
+            rewrite_tflite_inout_opname(
+                output_folder_path=output_folder_path,
+                tflite_file_name=f'{output_file_name}_int8.tflite',
+                onnx_input_names=onnx_graph_input_names,
+                onnx_output_names=onnx_graph_output_names,
+            )
+        if output_weights:
+            weights_export(
+                extract_target_tflite_file_path=f'{output_folder_path}/{output_file_name}_int8.tflite',
+                output_weights_file_path=f'{output_folder_path}/{output_file_name}_int8_weights.h5',
+            )
+        info(Color.GREEN(f'Int8 tflite output complete!'))
+
+
+        if not output_signaturedefs and not output_integer_quantized_tflite:
+            converter = tf.lite.TFLiteConverter.from_concrete_functions(
+                [concrete_func]
+            )
+        else:
+            converter = tf.lite.TFLiteConverter.from_saved_model(output_folder_path)
         converter.target_spec.supported_ops = [
             tf.lite.OpsSet.TFLITE_BUILTINS,
             tf.lite.OpsSet.SELECT_TF_OPS,
         ]
         converter.unfold_batchmatmul = enable_batchmatmul_unfold
         tflite_model = converter.convert()
+
         with open(f'{output_folder_path}/{output_file_name}_float32.tflite', 'wb') as w:
             w.write(tflite_model)
         if copy_onnx_input_output_names_to_tflite:
@@ -2199,6 +2245,17 @@ def main():
             'replace_argmax_to_fused_argmax_and_indices_is_float32 can be specified.'
     )
     rar_group.add_argument(
+        '-rarn',
+        '--replace_argmax_to_reducemax_new',
+        action='store_true',
+        help=\
+            'Replace ArgMax with a ReduceMax. The returned indices are float32. \n' +
+            'Only one of replace_argmax_to_reducemax_and_indices_is_int64 and \n' +
+            'replace_argmax_to_reducemax_and_indices_is_float32 and \n'+
+            'replace_argmax_to_fused_argmax_and_indices_is_int64 and \n'+
+            'replace_argmax_to_fused_argmax_and_indices_is_float32 can be specified.'
+    )
+    rar_group.add_argument(
         '-rafi64',
         '--replace_argmax_to_fused_argmax_and_indices_is_int64',
         action='store_true',
@@ -2436,6 +2493,7 @@ def main():
         optimization_for_gpu_delegate=args.optimization_for_gpu_delegate,
         replace_argmax_to_reducemax_and_indices_is_int64=args.replace_argmax_to_reducemax_and_indices_is_int64,
         replace_argmax_to_reducemax_and_indices_is_float32=args.replace_argmax_to_reducemax_and_indices_is_float32,
+        replace_argmax_to_reducemax_new=args.replace_argmax_to_reducemax_new,
         replace_argmax_to_fused_argmax_and_indices_is_int64=args.replace_argmax_to_fused_argmax_and_indices_is_int64,
         replace_argmax_to_fused_argmax_and_indices_is_float32=args.replace_argmax_to_fused_argmax_and_indices_is_float32,
         fused_argmax_scale_ratio=args.fused_argmax_scale_ratio,

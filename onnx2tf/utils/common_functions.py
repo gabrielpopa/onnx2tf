@@ -1297,6 +1297,62 @@ def _nnapi_scalar(
     return tf.constant(value, dtype=dtype, shape=(1,))
 
 
+def alternative_argmax_new(
+    *,
+    input_tensor,
+    axis: int = -1,
+    keepdims: bool = False,
+) -> Any:
+    """Replace ArgMax with a ReduceMax.
+
+    Parameters
+    ----------
+    input_tensor: Tensor
+        Tensor to be processed
+
+    axis: int
+        The axis to reduce across
+        Default: -1
+
+    keepdims: bool
+        True: Array dimensionality is preserved after ArgMax
+        False: Number of array dimensions not maintained after ArgMax
+        Default: False
+
+    Returns
+    ----------
+    pseudo_argmax: Tensor
+        Converted ArgMax
+    """
+
+    # reduce_max as alternative
+
+    # calculate the max value on specified axis
+    axis_max = tf.reduce_max(input_tensor, axis=axis, keepdims=True)
+    
+    # make a mask for max values
+    mask = tf.cast(tf.equal(input_tensor, axis_max), input_tensor.dtype)
+    
+    # get dimensions and generate indices
+    dim_size = tf.shape(input_tensor)[axis]
+    indices = tf.range(dim_size, dtype=input_tensor.dtype)
+
+    # Expand indices to match input tensor's shape
+    shape_to_expand = [1] * len(input_tensor.shape)
+    shape_to_expand[axis] = dim_size
+    indices = tf.reshape(indices, shape_to_expand)
+
+    # broadcast indices across the input tensor
+    expanded_indices = indices + tf.zeros_like(input_tensor, dtype=input_tensor.dtype)
+
+    # mask out the max indices
+    max_indices = expanded_indices * mask
+    
+    # reduce_max again, but to max_indices
+    result = tf.reduce_max(max_indices, axis=axis, keepdims=keepdims)
+    
+    return result
+
 def alternative_argmax(
     *,
     input_tensor,
@@ -1345,7 +1401,6 @@ def alternative_argmax(
         True: Convert final output to float32
         False: Do not convert final output to float32
         Default: False
-
     Returns
     ----------
     pseudo_argmax: Tensor
@@ -1443,7 +1498,6 @@ def alternative_argmax(
             reverse_argmax,
             name=name,
         )
-
 
 def alternative_fused_argmax(
     *,
@@ -4722,6 +4776,7 @@ def rewrite_tflite_inout_opname(
                 f.write(model_bytes)
 
     except Exception as ex:
+        raise ex
         warn(
             'If you want tflite input OP name and output OP name ' +
             'to match ONNX input and output names, ' +

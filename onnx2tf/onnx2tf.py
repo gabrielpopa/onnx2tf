@@ -1406,7 +1406,6 @@ def convert(
             msg_list = [s for s in e.args if isinstance(s, str)]
             if len(msg_list) > 0:
                 for s in msg_list:
-<<<<<<< HEAD
                     if 'A root scope name has to match the following pattern' in s:
                         error(
                             f'Generation of saved_model failed because the OP name does not match the following pattern. ^[A-Za-z0-9.][A-Za-z0-9_.\\\\/>-]*$'
@@ -1417,18 +1416,6 @@ def convert(
                             f'Please convert again with the `-osd` or `--output_signaturedefs` option.'
                         )
                         sys.exit(1)
-=======
-                    if 'Failed to add concrete function' in s \
-                        or "Tried to export a function which references an 'untracked' resource" in s:
-                        export_archive = tf_keras.export.ExportArchive()
-                        export_archive.add_endpoint(
-                            name=SIGNATURE_KEY,
-                            fn=lambda *inputs : model(inputs),
-                            input_signature=[tf.TensorSpec(tensor.shape, tensor.dtype, tensor.name) for tensor in model.inputs],
-                        )
-                        export_archive.write_out(output_folder_path)
-                        break
->>>>>>> 1e5da8c (Disable arm64/aarch64 containers and fix `-GroupConvolution` conversion bug on `-osd` and `-oiqt`.)
             else:
                 error(e)
                 import traceback

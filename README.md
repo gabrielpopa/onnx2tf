@@ -309,6 +309,7 @@ Video speed is adjusted approximately 50 times slower than actual speed.
   -w /workdir \
   ghcr.io/pinto0309/onnx2tf:1.26.8
 conversion bug on `-osd` and `-oiqt`.)
+values ​​following `Gemm` and `MatMul`)
 
   or
 
@@ -319,6 +320,7 @@ conversion bug on `-osd` and `-oiqt`.)
   docker.io/pinto0309/onnx2tf:1.26.8
 Integer Quantization without `--dgc`.)
 conversion bug on `-osd` and `-oiqt`.)
+values ​​following `Gemm` and `MatMul`)
 
   or
 

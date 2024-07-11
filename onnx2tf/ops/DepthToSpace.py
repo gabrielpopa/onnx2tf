@@ -99,7 +99,6 @@ def make_node(
         csize = channel // (blocksize**2)
         optimization_for_gpu_delegate: bool = kwargs['optimization_for_gpu_delegate']
 
-        print(optimization_for_gpu_delegate)
         if not optimization_for_gpu_delegate:
             # Transposing 6D tensors are not supported by the current TensorFlow Lite 2.16.1
             # for Android and will cause a fallback on the CPU.

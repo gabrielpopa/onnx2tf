@@ -1625,7 +1625,6 @@ def convert(
         # Quantized TFLite
         if output_integer_quantized_tflite:
             # Get signatures/input keys
-
             trackable_obj = \
                 tf.saved_model.load(
                     output_folder_path

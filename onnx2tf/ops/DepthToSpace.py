@@ -97,22 +97,33 @@ def make_node(
         batch, channel = input_tensor_shape[0], input_tensor_shape[-1]
         height, width = input_tensor_shape[1], input_tensor_shape[2]
         csize = channel // (blocksize**2)
+        optimization_for_gpu_delegate: bool = kwargs['optimization_for_gpu_delegate']
 
-        reshape_node = tf.reshape(
-            tensor=input_tensor,
-            shape=[batch, height, width, csize, blocksize, blocksize]
-        )
-        transpose_node = transpose_with_flexing_deterrence(
-            input_tensor=reshape_node,
-            perm=[0,1,4,2,5,3],
-            **kwargs,
-        )
-        tf_layers_dict[graph_node_output.name]['tf_node'] = \
-            tf.reshape(
-                tensor=transpose_node,
+        print(optimization_for_gpu_delegate)
+        if not optimization_for_gpu_delegate:
+            # Transposing 6D tensors are not supported by the current TensorFlow Lite 2.16.1
+            # for Android and will cause a fallback on the CPU.
+            # See: https://onnx.ai/onnx/operators/onnx__DepthToSpace.html
+            x = tf.reshape(
+                tensor=input_tensor,
+                shape=[batch, height, width, csize, blocksize, blocksize]
+            )
+            x = tf.transpose(x, perm=[0, 1, 4, 2, 5, 3])
+            final_tensor = tf.reshape(
+                tensor=x,
                 shape=[batch, height * blocksize, width * blocksize, csize],
                 name=graph_node.name,
-        )
+            )
+        else:
+            # Force a split in two 4D transposes.
+            # Slower to run (more layers), but at least it runs on the GPU.
+            x = tf.reshape(input_tensor, (batch * height * width, csize, blocksize, blocksize))  # Fold BHW
+            x = tf.transpose(x, (0, 3, 1, 2))
+            x = tf.reshape(x, (batch * height, width * blocksize, csize, blocksize))  # Fold W, blocksize
+            x = tf.transpose(x, (0, 3, 1, 2))
+            final_tensor = tf.reshape(x, (batch, height * blocksize, width * blocksize, csize), name=graph_node.name)
+
+        tf_layers_dict[graph_node_output.name]['tf_node'] = final_tensor
 
     onnx_tensor_infos_for_validation: Dict[str: np.ndarray] = kwargs['onnx_tensor_infos_for_validation']
     test_data_nhwc: np.ndarray = kwargs['test_data_nhwc']

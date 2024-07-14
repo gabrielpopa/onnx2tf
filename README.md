@@ -311,6 +311,7 @@ Video speed is adjusted approximately 50 times slower than actual speed.
 conversion bug on `-osd` and `-oiqt`.)
 values ​​following `Gemm` and `MatMul`)
 multiple undefined dimensions)
+dimensions)
 
   or
 
@@ -323,6 +324,7 @@ Integer Quantization without `--dgc`.)
 conversion bug on `-osd` and `-oiqt`.)
 values ​​following `Gemm` and `MatMul`)
 multiple undefined dimensions)
+dimensions)
 
   or
 

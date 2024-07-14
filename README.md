@@ -310,6 +310,7 @@ Video speed is adjusted approximately 50 times slower than actual speed.
   ghcr.io/pinto0309/onnx2tf:1.26.8
 conversion bug on `-osd` and `-oiqt`.)
 values ​​following `Gemm` and `MatMul`)
+multiple undefined dimensions)
 
   or
 
@@ -321,6 +322,7 @@ values ​​following `Gemm` and `MatMul`)
 Integer Quantization without `--dgc`.)
 conversion bug on `-osd` and `-oiqt`.)
 values ​​following `Gemm` and `MatMul`)
+multiple undefined dimensions)
 
   or
 

@@ -25,6 +25,8 @@ from onnx2tf.utils.common_functions import (
     transpose_with_flexing_deterrence,
     get_tf_model_inputs,
     onnx_tf_tensor_validation,
+    get_replacement_parameter,
+    pre_process_transpose,
     post_process_transpose,
 )
 from typing import Any, Dict
@@ -96,6 +98,22 @@ def make_node(
     input_bias = tf_layers_dict[input_bias.name]['tf_node'] \
         if isinstance(input_bias, gs.Variable) else input_bias
 
+    input_tensor = pre_process_transpose(
+        value_before_transpose=input_tensor,
+        param_target='inputs',
+        param_name=graph_node.inputs[0].name,
+        **kwargs,
+    )
+    input_weights = pre_process_transpose(
+        value_before_transpose=input_weights,
+        param_target='inputs',
+        param_name=graph_node.inputs[1].name,
+        **kwargs,
+    )
+
+    input_tensor = tf.cast(input_tensor, dtype=tf.float16) if graph_node_input.dtype == tf.float16 else input_tensor
+    input_weights = tf.cast(input_weights, dtype=tf.float16) if graph_node_input.dtype == tf.float16 else input_weights
+    
     input_tensor_shape = input_tensor.shape
     input_tensor_rank = len(input_tensor_shape)
     spatial_size = input_tensor_rank - 2

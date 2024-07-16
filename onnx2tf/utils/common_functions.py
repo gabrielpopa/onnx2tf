@@ -435,6 +435,8 @@ def auto_cast(func):
     @wraps(func)
     def auto_cast_wrapper_func(*args, **kwargs):
         const_or_var = func(*args, **kwargs)
+        # do not cast float16 to float32
+        return const_or_var
         if isinstance(const_or_var, np.ndarray) \
             and const_or_var.dtype == np.float16:
             const_or_var = const_or_var.astype(np.float32)
@@ -4268,10 +4270,10 @@ def broadcast_for_gpu_delegate(
     if not optimization_for_gpu_delegate:
         return input_tensor_1, input_tensor_2
     xshapes = input_tensor_1.shape
-    xshape_list = [int(dim) for dim in input_tensor_1.shape]
+    xshape_list = [int(dim) for dim in input_tensor_1.shape if dim is not None]
     xshapes_rank = len(xshapes)
     yshapes = input_tensor_2.shape
-    yshape_list = [int(dim) for dim in input_tensor_2.shape]
+    yshape_list = [int(dim) for dim in input_tensor_2.shape if dim is not None]
     yshapes_rank = len(yshape_list)
 
     try:
@@ -5932,8 +5934,10 @@ def correction_process_for_accuracy_errors(
                         # Terminate when the error is less than 1e-3
                         if onnx_tensor_infos:
                             min_abs_err = sys.maxsize
-                            min_abs_err_perm_1: int = [idx for idx in range(len(validation_data_1.shape))]
-                            min_abs_err_perm_2: int = [idx for idx in range(len(validation_data_2.shape))]
+                            min_abs_err_perm_1: int = 0 if validation_data_1 is None else [idx for idx in range(len(validation_data_1.shape))]
+                            min_abs_err_perm_2: int = 0 if validation_data_2 is None else [idx for idx in range(len(validation_data_2.shape))]
+                            if (min_abs_err_perm_1 + min_abs_err_perm_2 == 0):
+                                return input_tensor_1, input_tensor_2
                             tensor_1_candidate_for_transpositions = \
                                 obtaining_an_inverted_pattern_for_brute_force_validation(tensor_shape=validation_data_1.shape)
                             tensor_2_candidate_for_transpositions = \

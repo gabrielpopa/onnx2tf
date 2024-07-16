@@ -110,6 +110,7 @@ def convert(
     disable_model_save: Optional[bool] = False,
     non_verbose: Optional[bool] = False,
     verbosity: Optional[str] = 'debug',
+    export_int: Optional[bool] = False,
 ) -> tf_keras.Model:
     """Convert ONNX to TensorFlow models.
 
@@ -845,6 +846,7 @@ def convert(
         'relu_relu6_merge_op_names': {},
         'mul_div_replace_op_names': {},
         'use_cuda': use_cuda,
+        'export_int': export_int,
     }
 
     tf_layers_dict = {}
@@ -1296,37 +1298,38 @@ def convert(
         Version: 22.10.26
         """
 
-        if not output_signaturedefs and not output_integer_quantized_tflite:
-            info(Color.GREEN(f'Int8 tflite from concrete_func!'))
-            converter_int8 = tf.lite.TFLiteConverter.from_concrete_functions(
-                [concrete_func]
-            )
-        else:
-            info(Color.GREEN(f'Int8 tflite from saved_model!'))
-            converter_int8 = tf.lite.TFLiteConverter.from_saved_model(output_folder_path)
-            
-        converter_int8.optimizations = [tf.lite.Optimize.DEFAULT]
-        converter_int8.target_spec.supported_ops = [
-            tf.lite.OpsSet.TFLITE_BUILTINS,
-            tf.lite.OpsSet.SELECT_TF_OPS,
-        ]
+        if export_int:
+            if not output_signaturedefs and not output_integer_quantized_tflite:
+                info(Color.GREEN(f'Int8 tflite from concrete_func!'))
+                converter_int8 = tf.lite.TFLiteConverter.from_concrete_functions(
+                    [concrete_func]
+                )
+            else:
+                info(Color.GREEN(f'Int8 tflite from saved_model!'))
+                converter_int8 = tf.lite.TFLiteConverter.from_saved_model(output_folder_path)
+                
+            converter_int8.optimizations = [tf.lite.Optimize.DEFAULT]
+            converter_int8.target_spec.supported_ops = [
+                tf.lite.OpsSet.TFLITE_BUILTINS,
+                tf.lite.OpsSet.SELECT_TF_OPS,
+            ]
 
-        tflite_model = converter_int8.convert()
-        with open(f'{output_folder_path}/{output_file_name}_int8.tflite', 'wb') as w:
-            w.write(tflite_model)
-        if copy_onnx_input_output_names_to_tflite:
-            rewrite_tflite_inout_opname(
-                output_folder_path=output_folder_path,
-                tflite_file_name=f'{output_file_name}_int8.tflite',
-                onnx_input_names=onnx_graph_input_names,
-                onnx_output_names=onnx_graph_output_names,
-            )
-        if output_weights:
-            weights_export(
-                extract_target_tflite_file_path=f'{output_folder_path}/{output_file_name}_int8.tflite',
-                output_weights_file_path=f'{output_folder_path}/{output_file_name}_int8_weights.h5',
-            )
-        info(Color.GREEN(f'Int8 tflite output complete!'))
+            tflite_model = converter_int8.convert()
+            with open(f'{output_folder_path}/{output_file_name}_int8.tflite', 'wb') as w:
+                w.write(tflite_model)
+            if copy_onnx_input_output_names_to_tflite:
+                rewrite_tflite_inout_opname(
+                    output_folder_path=output_folder_path,
+                    tflite_file_name=f'{output_file_name}_int8.tflite',
+                    onnx_input_names=onnx_graph_input_names,
+                    onnx_output_names=onnx_graph_output_names,
+                )
+            if output_weights:
+                weights_export(
+                    extract_target_tflite_file_path=f'{output_folder_path}/{output_file_name}_int8.tflite',
+                    output_weights_file_path=f'{output_folder_path}/{output_file_name}_int8_weights.h5',
+                )
+            info(Color.GREEN(f'Int8 tflite output complete!'))
 
 
         if not output_signaturedefs and not output_integer_quantized_tflite:
@@ -2417,6 +2420,12 @@ def main():
         help=\
             'Change the level of information printed. ' +
             'Default: "debug" (for backwards compatability)'
+    )
+    parser.add_argument(
+        '-ei',
+        '--export_int',
+        action='store_true',
+        help='Export int8.'
     )
     args = parser.parse_args()
 

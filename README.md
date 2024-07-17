@@ -318,15 +318,10 @@ Video speed is adjusted approximately 50 times slower than actual speed.
   docker run --rm -it \
   -v `pwd`:/workdir \
   -w /workdir \
-<<<<<<< HEAD
+
   docker.io/pinto0309/onnx2tf:1.27.10
   Quantization without `--dgc`.)
 
-=======
-
-  docker.io/pinto0309/onnx2tf:1.26.8
-  
->>>>>>> db95049 (Fixed NHWC flag judgment bug in Transpose of ViT for 3D tensor)
   or
 
   pip install -U onnx==1.17.0 \

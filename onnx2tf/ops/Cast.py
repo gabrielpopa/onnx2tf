@@ -101,6 +101,11 @@ def make_node(
         and to == tf.float64:
         to = tf.float32
 
+    # (gp) Suppression of FlexCast generation
+    # Any -> Float16
+    if to == tf.float16 or to == tf.float64 :
+        to = tf.float32
+
     # Generation of TF OP
     tf_layers_dict[graph_node_output.name]['tf_node'] = \
         tf.cast(

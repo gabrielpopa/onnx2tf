@@ -294,6 +294,9 @@ def make_node(
         **kwargs,
     )
 
+    # (gp) Prevent Flex?
+    input_tensor = tf.cast(input_tensor, dtype=tf.float32) if input_tensor.dtype == tf.float64 else input_tensor
+
     reducemeaned_tensor = input_tensor
     reducemeaned_tensor = tf.math.reduce_mean(
         input_tensor=reducemeaned_tensor,

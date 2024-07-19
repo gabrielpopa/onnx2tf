@@ -24,6 +24,9 @@ from onnx2tf.utils.common_functions import (
     transpose_with_flexing_deterrence,
     get_tf_model_inputs,
     onnx_tf_tensor_validation,
+    get_replacement_parameter,
+    pre_process_transpose,
+    post_process_transpose,
 )
 from typing import Any, Dict
 from onnx2tf.utils.logging import *
@@ -33,6 +36,7 @@ INF_INDEX_VALUE: int = 4294967296
 
 @print_node_info
 @inverted_operation_enable_disable
+@get_replacement_parameter
 def make_node(
     *,
     graph_node: gs.Node,
@@ -92,6 +96,25 @@ def make_node(
         if isinstance(input_weights, gs.Variable) else input_weights
     input_bias = tf_layers_dict[input_bias.name]['tf_node'] \
         if isinstance(input_bias, gs.Variable) else input_bias
+
+    input_tensor = pre_process_transpose(
+        value_before_transpose=input_tensor,
+        param_target='inputs',
+        param_name=graph_node.inputs[0].name,
+        **kwargs,
+    )
+    input_weights = pre_process_transpose(
+        value_before_transpose=input_weights,
+        param_target='inputs',
+        param_name=graph_node.inputs[1].name,
+        **kwargs,
+    )
+
+    # (gp) Prevent Flex?
+    input_tensor = tf.cast(input_tensor, dtype=tf.float32) if graph_node_input.dtype == tf.float16 else input_tensor
+    input_weights = tf.cast(input_weights, dtype=tf.float32) if graph_node_input.dtype == tf.float16 else input_weights
+    input_bias = tf.cast(input_bias, dtype=tf.float32) if input_bias is not None and graph_node_input.dtype == tf.float16 else input_bias
+    dtype = tf.float32 if graph_node_input.dtype == tf.float16 else dtype
 
     input_tensor_shape = input_tensor.shape
     input_tensor_rank = len(input_tensor_shape)
@@ -931,6 +954,14 @@ def make_node(
                     strides,
                     dilations,
                 )
+
+    # Post-process transpose
+    tf_layers_dict[graph_node_output.name]['tf_node'] = post_process_transpose(
+        value_before_transpose=tf_layers_dict[graph_node_output.name]['tf_node'],
+        param_target='outputs',
+        param_name=graph_node.outputs[0].name,
+        **kwargs,
+    )
 
     # Generation of Debug Info
     tf_layers_dict[graph_node_output.name]['tf_node_info'] = \

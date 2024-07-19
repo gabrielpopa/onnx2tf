@@ -65,6 +65,9 @@ def make_node(
     onnx_output_shape = graph_node_output.shape
     dtype = graph_node_output.dtype
 
+    # (gp) Prevent Flex?
+    dtype = tf.float32 if dtype == tf.float16 or dtype == tf.float64 else dtype
+
     disable_strict_mode: bool = kwargs['disable_strict_mode']
 
     # Preserving Graph Structure (Dict)
@@ -127,6 +130,9 @@ def make_node(
 
     output_dtype = NUMPY_DTYPES_TO_TF_DTYPES[dtype] \
         if isinstance(dtype, np.dtype) else dtype
+
+    # (gp) Prevent Flex?
+    output_dtype = tf.float32 if output_dtype == tf.float16 or output_dtype == tf.float64 else output_dtype
 
     # Shape Unmatch Error Mitigation Measures
     # Search for and transpose shapes that do not cause shape unmatch errors

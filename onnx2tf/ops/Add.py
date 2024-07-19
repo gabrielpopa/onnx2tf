@@ -131,6 +131,11 @@ def make_node(
     elif input_tensor_1.dtype in [tf.int32, tf.int64] and input_tensor_2.dtype == tf.float32:
         input_tensor_1 = tf.cast(input_tensor_1, dtype=tf.float32)
 
+
+    # (gp) Tensors must be of the same size
+    if (input_tensor_1.dtype != input_tensor_2.dtype):
+        input_tensor_2 = tf.cast(input_tensor_2, input_tensor_1.dtype)
+
     # Disable unnecessary Transpose
     #   1. If both x and y are gs.Variable
     #   2. If only one of the two is the output of Transpose

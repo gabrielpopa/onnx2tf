@@ -288,7 +288,10 @@ def make_node(
                         )
                 
                 conv_rs = conv_layer(input_tensor_split)
-                
+
+                # (gp) Weight tensor must be of the same dtype as input_tensor.
+                input_weights = tf.cast(input_weights, tf.float32) if input_weights.dtype != tf.float32 else input_weights
+
                 if use_bias:
                     if isinstance(act, tf.keras.layers.PReLU):
                         conv_layer.set_weights([input_weights, input_bias, np.ones((1, 1, num_filters))])

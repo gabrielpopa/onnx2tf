@@ -93,6 +93,13 @@ def make_node(
         **kwargs,
     )
 
+    # (gp) Prevent Flex?
+    input_tensor_1 = tf.cast(input_tensor_1, dtype=tf.float32) if input_tensor_1.dtype == tf.float16 or input_tensor_1.dtype == tf.float64 else input_tensor_1
+
+    # (gp) Tesors must be of same type.
+    if (input_tensor_1.dtype != input_tensor_2.dtype):
+        input_tensor_2 = tf.cast(input_tensor_2, input_tensor_1.dtype)
+
     replace_power_to_pseudo_power = "power" in kwargs['replace_to_pseudo_operators'] \
                                     or "pow" in kwargs['replace_to_pseudo_operators']
 
@@ -148,7 +155,9 @@ def make_node(
         if isinstance(output_dtype, np.dtype) else output_dtype
     if to_dtype is None:
         to_dtype = input_tensor_1.dtype
-    if to_dtype == tf.float16:
+
+    # (gp) Prevent Flex?
+    if to_dtype == tf.float16 or to_dtype == tf.float64:
         to_dtype = input_tensor_1.dtype
     if powed_tensor.dtype != to_dtype:
         powed_tensor = tf.cast(

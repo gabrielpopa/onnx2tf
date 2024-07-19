@@ -85,6 +85,10 @@ def make_node(
         split = len(graph_node_outputs)
     split = graph_node.attrs.get('split', split)
 
+    # (gp) Prevent Flex?
+    if (dtype == tf.float16):
+        dtype = tf.float32
+ 
     for graph_node_output in graph_node_outputs:
         # Preserving Graph Structure (Dict)
         tf_layers_dict[graph_node_output.name] = {

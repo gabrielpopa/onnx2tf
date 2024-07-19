@@ -110,9 +110,12 @@ def make_node(
         **kwargs,
     )
 
-    input_tensor = tf.cast(input_tensor, dtype=tf.float16) if graph_node_input.dtype == tf.float16 else input_tensor
-    input_weights = tf.cast(input_weights, dtype=tf.float16) if graph_node_input.dtype == tf.float16 else input_weights
-    
+    # (gp) Prevent Flex?
+    input_tensor = tf.cast(input_tensor, dtype=tf.float32) if graph_node_input.dtype == tf.float16 else input_tensor
+    input_weights = tf.cast(input_weights, dtype=tf.float32) if graph_node_input.dtype == tf.float16 else input_weights
+    input_bias = tf.cast(input_bias, dtype=tf.float32) if input_bias is not None and graph_node_input.dtype == tf.float16 else input_bias
+    dtype = tf.float32 if graph_node_input.dtype == tf.float16 else dtype
+
     input_tensor_shape = input_tensor.shape
     input_tensor_rank = len(input_tensor_shape)
     spatial_size = input_tensor_rank - 2

@@ -435,8 +435,6 @@ def auto_cast(func):
     @wraps(func)
     def auto_cast_wrapper_func(*args, **kwargs):
         const_or_var = func(*args, **kwargs)
-        # do not cast float16 to float32
-        return const_or_var
         if isinstance(const_or_var, np.ndarray) \
             and const_or_var.dtype == np.float16:
             const_or_var = const_or_var.astype(np.float32)

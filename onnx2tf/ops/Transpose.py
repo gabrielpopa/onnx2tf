@@ -120,7 +120,10 @@ def make_node(
                                 if new_perm[matched_idx] == -1:
                                     new_perm[matched_idx] = tf_shape_idx
                                     break
-                    perm = new_perm
+                                    
+                    # (gp) Perm not respected. Why?
+                    # perm = new_perm
+                    perm = perm
 
         elif perm is not None and isinstance(perm, np.ndarray) and len(perm.shape) == 0:
             if perm[0] == 0:
@@ -157,7 +160,9 @@ def make_node(
                                 if new_perm[matched_idx] == -1:
                                     new_perm[matched_idx] = tf_shape_idx
                                     break
-                    perm = new_perm
+                    # (gp) Perm not respected. Why?
+                    # perm = new_perm
+                    perm = perm
 
     # Preserving Graph Structure (Dict)
     tf_layers_dict[graph_node_output.name] = {

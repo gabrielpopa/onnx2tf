@@ -57,6 +57,35 @@ from onnx2tf.utils.enums import (
 from onnx2tf.utils.logging import *
 from sng4onnx import generate as op_name_auto_generate
 
+import io
+import contextlib
+
+def analyze(tflite_model):
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+        tf.lite.experimental.Analyzer.analyze(model_content=tflite_model, gpu_compatibility=True)
+
+    # Get the captured output
+    captured_output = output.getvalue()
+
+    flex_pattern = r'OP#[0-9]+\s*Flex'
+    gpu_pattern = 'GPU COMPATIBILITY WARNING'
+    lines = captured_output.split('\n')
+    for i, line in enumerate(lines):
+        if re.search(flex_pattern, line, re.IGNORECASE):
+            error(f"Flex operation found: {line}")
+        if re.search(gpu_pattern, line, re.IGNORECASE):
+            warn(f"{lines[i-1]}")
+            warn(f"{line}")
+
+    if re.search(flex_pattern, captured_output, re.IGNORECASE):
+        info(Color.RED(f'Flex incompatibility! Will not run on Android'))
+        sys.exit(1)
+    elif re.search(gpu_pattern, captured_output, re.IGNORECASE):
+        warn(Color.WHITE(f'GPU incompatibility!'))
+    else:
+        info(Color.GREEN(f'No Flex incompatibility!'))
+
 def convert(
     input_onnx_file_path: Optional[str] = '',
     onnx_graph: Optional[onnx.ModelProto] = None,
@@ -911,6 +940,7 @@ def convert(
                 keep_shape_absolutely_input_names=keep_shape_absolutely_input_names,
                 **additional_parameters,
             )
+
             op_counta += 1
             additional_parameters['op_counta'] = op_counta
 
@@ -1063,6 +1093,7 @@ def convert(
                 tf_layers_dict=tf_layers_dict,
                 **additional_parameters,
             )
+
             op_counta += 1
             additional_parameters['op_counta'] = op_counta
 
@@ -1330,6 +1361,8 @@ def convert(
                     output_weights_file_path=f'{output_folder_path}/{output_file_name}_int8_weights.h5',
                 )
             info(Color.GREEN(f'Int8 tflite output complete!'))
+        else:
+            info(Color.GREEN(f'Int8 skipped!'))
 
 
         if not output_signaturedefs and not output_integer_quantized_tflite:
@@ -1344,6 +1377,7 @@ def convert(
         ]
         converter.unfold_batchmatmul = enable_batchmatmul_unfold
         tflite_model = converter.convert()
+        analyze(tflite_model)
 
         with open(f'{output_folder_path}/{output_file_name}_float32.tflite', 'wb') as w:
             w.write(tflite_model)
@@ -2518,6 +2552,7 @@ def main():
         disable_model_save=args.disable_model_save,
         non_verbose=args.non_verbose,
         verbosity=args.verbosity,
+        export_int=args.export_int,
     )
 
 

@@ -219,6 +219,13 @@ def make_node(
                 **kwargs,
             )
 
+    # (gp) Prevent FlexMul
+    input_tensor_1 = tf.cast(input_tensor_1, dtype=tf.float32) if input_tensor_1.dtype == tf.float16 or input_tensor_1.dtype == tf.float64 else input_tensor_1
+    
+    # (gp) Tensors must be of the same size
+    if (input_tensor_1.dtype != input_tensor_2.dtype):
+        input_tensor_2 = tf.cast(input_tensor_2, input_tensor_1.dtype)
+
     # Generation of TF OP
 
     # Replace with GeLU if available.

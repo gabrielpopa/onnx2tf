@@ -17,6 +17,12 @@ from onnx2tf.utils.common_functions import (
     post_process_transpose,
 )
 
+def dynamic_split_compatible(input_tensor, split_sizes, axis=0):
+    split_sizes = tf.convert_to_tensor(split_sizes, dtype=tf.int32)
+    # num_splits = split_sizes.shape[0] or tf.shape(split_sizes)[0]
+    # indices = tf.cumsum(split_sizes)[:-1]
+    return tf.split(input_tensor, num_or_size_splits=split_sizes, axis=axis)
+
 
 @print_node_info
 @inverted_operation_enable_disable
@@ -228,14 +234,8 @@ def make_node(
             )
             begin_stock.append(begin_)
     else:
-        splited_tensors = \
-            tf.split(
-                value=input_tensor,
-                num_or_size_splits=split,
-                axis=axis,
-                num=num_outputs,
-                name=graph_node.name,
-            )
+        splited_tensors = dynamic_split_compatible(input_tensor, split, axis)
+        
     for splited_tensor, graph_node_output in zip(splited_tensors, graph_node_outputs):
         tf_layers_dict[graph_node_output.name]['tf_node'] = splited_tensor
         # Post-process transpose

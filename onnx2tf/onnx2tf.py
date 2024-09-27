@@ -1330,11 +1330,9 @@ def convert(
             func=lambda *inputs : model(inputs),
             input_signature=[tf.TensorSpec(tensor.shape, tensor.dtype, tensor.name) for tensor in model.inputs],
         )
-<<<<<<< HEAD
+
         info(Color.GREEN(f'Create concrete func!'))
-=======
         concrete_func = run_model.get_concrete_function()
->>>>>>> 01e7852 (Generation of `saved_model` with `GroupConvolution` and Full Integer Quantization without `--dgc`.)
 
         SIGNATURE_KEY = 'serving_default'
 

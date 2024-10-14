@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # perm_possible=("[0,3,1,2]" "[0,2,1,3]" "[0,3,2,1]")
-perm_possible=("[0,3,1,2]" "[0,3,2,1]")
+perm_possible=("[0,3,1,2]" "[0,2,1,3]" "[0,3,2,1]")
 
 if [ "$#" -eq 1 ]; then
     onnx_file="$1"
@@ -37,7 +37,7 @@ if [ ! -f "$json_file" ]; then
     echo "Created $json_file with initial content."
 fi
 
-command="python3 onnx2tf/onnx2tf.py --optimization_for_gpu_delegate --replace_argmax_to_reducemax_new --not_use_opname_auto_generate --disable_group_convolution --disable_strict_mode -v debug --param_replacement_file $json_file -i $onnx_file -dsft -dsfs"
+command="python3 onnx2tf/onnx2tf.py --optimization_for_gpu_delegate --replace_argmax_to_reducemax_new --not_use_onnxsim --not_use_opname_auto_generate --disable_group_convolution --disable_strict_mode -v debug -dsft -dsfs --replace_to_pseudo_operators Asin Acos Atan Abs PReLU LeakyReLU Power GatherND Neg HardSwish Erf GeLU MatMulInteger --param_replacement_file $json_file -i $onnx_file"
 layer=0
 perm_counter=0
 current_perm=${perm_possible[$perm_counter]}
@@ -360,6 +360,10 @@ handle_error() {
                 input_names+=("${BASH_REMATCH[1]}")
                 input_shapes+=("${BASH_REMATCH[2]}")
             fi
+            if [[ "$clean_line" =~ input_name\.[0-9]+:\ ([^ ]+)\ shape:\ None ]]; then
+                input_names+=("${BASH_REMATCH[1]}")
+                input_shapes+=("[,,,]")
+            fi
         done <<< "$op_string"
 
         # Print arrays to verify
@@ -373,7 +377,7 @@ handle_error() {
             
             input_name=${input_names[$i]}
             input_shape=${input_shapes[$i]}
-            # echo "Name: ${input_name}, Shape: ${input_shape}"
+            echo "Name: ${input_name}, Shape: ${input_shape}"
             if [[ $(check_param_name_exists $input_name) == "false" ]]; then
                 # echo "input_shape: $input_shape"
                 # count_elements_in_shape $input_shape
@@ -430,6 +434,8 @@ handle_error() {
         touch $json_file
     elif echo "$output" | grep -q "The file specified in param_replacement_file is not in JSON format"; then
         echo "{\"operations\": []}" > $json_file
+    elif echo "$output" | grep -q "Flex incompatibility"; then
+        exit 8
     else
         echo "ERROR: Unhandled error. Exiting..."
         return 1
@@ -441,7 +447,11 @@ handle_error() {
 while true; do
     echo "Running conversion..."
     output=$(eval "$command" 2>&1 | tee /dev/tty)
-    status=$?
+    if [ -n "$ZSH_VERSION" ]; then
+        status=${pipestatus[1]}
+    else
+        status=${PIPESTATUS[0]}
+    fi
 
     if [ $status -eq 0 ]; then
         echo "Done!"

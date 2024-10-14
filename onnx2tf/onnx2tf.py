@@ -69,19 +69,49 @@ def analyze(tflite_model):
     # Get the captured output
     captured_output = output.getvalue()
 
-    flex_pattern = r'OP#[0-9]+\s*Flex'
+    # flex_pattern = r'Op#(\d+)\s*Flex.*\(T#(\d+)\)'
+    flex_pattern = r'Op#(\d+)\s*Flex.*\(T#(\d+)\).*->\s*\[T#(\d+)\]'
+    tensor_pattern = r'T#(\d+)\(.*?\) shape:\[.*?\], type:\w+'
     gpu_pattern = 'GPU COMPATIBILITY WARNING'
     lines = captured_output.split('\n')
+    op_tensor_pairs = []
     for i, line in enumerate(lines):
-        if re.search(flex_pattern, line, re.IGNORECASE):
-            error(f"Flex operation found: {line}")
+        flex_match = re.search(flex_pattern, line, re.IGNORECASE)
+        # Check for Flex operation and store Op# and Tensor number
+        if flex_match:
+            try:
+                op_num = flex_match.group(1) 
+                tensor_num = flex_match.group(2)
+                op_tensor_pairs.append((op_num, tensor_num))
+                tensor_num2 = flex_match.group(3)
+                op_tensor_pairs.append((op_num, tensor_num2))
+                error(f"Flex operation found: {line}")
+            except IndexError:
+                error(f"Flex operation found: {line}")
+        # Check for GPU compatibility warning
         if re.search(gpu_pattern, line, re.IGNORECASE):
             warn(f"{lines[i-1]}")
             warn(f"{line}")
 
+        # if re.search(flex_pattern, line, re.IGNORECASE):
+        #     error(f"Flex operation found: {line}")
+        # if re.search(gpu_pattern, line, re.IGNORECASE):
+        #     warn(f"{lines[i-1]}")
+        #     warn(f"{line}")
+
+    for i, line in enumerate(lines):
+        tensor_match = re.search(tensor_pattern, line)
+        
+        if tensor_match:
+            tensor_num = tensor_match.group(1)
+            for _, stored_tensor in op_tensor_pairs:
+                if tensor_num == stored_tensor:
+                    print(f"Tensor found: {line}")
+
     if re.search(flex_pattern, captured_output, re.IGNORECASE):
+        # info(captured_output)
         info(Color.RED(f'Flex incompatibility! Will not run on Android'))
-        sys.exit(1)
+        # sys.exit(1)
     elif re.search(gpu_pattern, captured_output, re.IGNORECASE):
         warn(Color.WHITE(f'GPU incompatibility!'))
     else:
@@ -1153,6 +1183,7 @@ def convert(
                 except:
                     pass
 
+        operations = []
         # Nodes
         # https://github.com/onnx/onnx/blob/main/docs/Operators.md
         for graph_node in graph.nodes:
@@ -1168,6 +1199,8 @@ def convert(
             # substitution because saved_model does not allow colons
             # Substitution because saved_model does not allow leading slashes in op names
             sanitizing(graph_node)
+            print(f"optype: {optype}")
+            operations.append(optype)
 
             op.make_node(
                 graph_node=graph_node,
@@ -1177,6 +1210,8 @@ def convert(
 
             op_counta += 1
             additional_parameters['op_counta'] = op_counta
+
+        print(f"operations: {operations}")
 
         del additional_parameters['onnx_tensor_infos_for_validation']
         del onnx_tensor_infos_for_validation

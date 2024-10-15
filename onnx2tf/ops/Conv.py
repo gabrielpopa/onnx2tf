@@ -14,6 +14,7 @@ from tensorflow.python.keras.layers import (
 )
 import onnx_graphsurgeon as gs
 from onnx2tf.utils.common_functions import (
+    get_replacement_parameter,
     get_constant_or_variable,
     get_weights_constant_or_variable,
     get_padding_as_op,
@@ -956,12 +957,13 @@ def make_node(
                 )
 
     # Post-process transpose
-    tf_layers_dict[graph_node_output.name]['tf_node'] = post_process_transpose(
-        value_before_transpose=tf_layers_dict[graph_node_output.name]['tf_node'],
-        param_target='outputs',
-        param_name=graph_node.outputs[0].name,
-        **kwargs,
-    )
+    tf_layers_dict[graph_node_output.name]['tf_node'] = \
+        post_process_transpose(
+            value_before_transpose=tf_layers_dict[graph_node_output.name]['tf_node'],
+            param_target='outputs',
+            param_name=graph_node.outputs[0].name,
+            **kwargs,
+        )
 
     # Generation of Debug Info
     tf_layers_dict[graph_node_output.name]['tf_node_info'] = \

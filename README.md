@@ -307,7 +307,7 @@ Video speed is adjusted approximately 50 times slower than actual speed.
   docker run --rm -it \
   -v `pwd`:/workdir \
   -w /workdir \
-  docker.io/pinto0309/onnx2tf:1.25.14
+  docker.io/pinto0309/onnx2tf:1.26.0
 
   or
 
@@ -1514,7 +1514,8 @@ usage: onnx2tf
 [-oiqt]
 [-qt {per-channel,per-tensor}]
 [-cind INPUT_NAME NUMPY_FILE_PATH MEAN STD]
-[-ioqd {int8,uint8}]
+[-iqd {int8,uint8,float32}]
+[-oqd {int8,uint8,float32}]
 [-nuo]
 [-nuonag]
 [-b BATCH_SIZE]
@@ -1671,8 +1672,12 @@ optional arguments:
       and {input_op_name}, {numpy_file_path}, {mean}, and {std} must all be entered.
       Otherwise, an error will occur during the -oiqt stage.
 
-  -ioqd {int8,uint8}, --input_output_quant_dtype {int8,uint8}
-    Input and Output dtypes when doing Full INT8 Quantization.
+  -iqd {int8,uint8,float32}, --input_quant_dtype {int8,uint8,float32}
+    Input dtypes when doing Full INT8 Quantization.
+    "int8"(default) or "uint8"
+
+  -oqd {int8,uint8,float32}, --output_quant_dtype {int8,uint8,float32}
+    Output dtypes when doing Full INT8 Quantization.
     "int8"(default) or "uint8"
 
   -nuo, --not_use_onnxsim
@@ -1993,7 +1998,8 @@ convert(
   output_integer_quantized_tflite: Optional[bool] = False,
   quant_type: Optional[str] = 'per-channel',
   custom_input_op_name_np_data_path: Optional[List] = None,
-  input_output_quant_dtype: Optional[str] = 'int8',
+  input_quant_dtype: Optional[str] = 'int8',
+  output_quant_dtype: Optional[str] = 'int8',
   not_use_onnxsim: Optional[bool] = False,
   not_use_opname_auto_generate: Optional[bool] = False,
   batch_size: Union[int, NoneType] = None,
@@ -2157,9 +2163,13 @@ convert(
         and {input_op_name}, {numpy_file_path}, {mean}, and {std} must all be entered.
         Otherwise, an error will occur during the -oiqt stage.
 
-    input_output_quant_dtype: Optional[str]
-      Input and Output dtypes when doing Full INT8 Quantization.
-      "int8"(default) or "uint8"
+    input_quant_dtype: Optional[str]
+      Input dtypes when doing Full INT8 Quantization.
+      "int8"(default) or "uint8" or "float32"
+
+    output_quant_dtype: Optional[str]
+      Output dtypes when doing Full INT8 Quantization.
+      "int8"(default) or "uint8" or "float32"
 
     not_use_onnxsim: Optional[bool]
       No optimization by onnx-simplifier is performed.
@@ -2585,7 +2595,7 @@ Do not submit an issue that only contains an amount of information that cannot b
   |14|Unsqueeze|1. "param_target": "inputs"<br>`pre_process_transpose_perm`: Transpose is applied to the tensor before the Unsqueeze operation with the perm specified as pre-processing.<br>2. "param_target": "outputs"<br>`post_process_transpose_perm`: Transpose is applied to the tensor after the Unsqueeze operation with the perm specified as post-processing.<br>3. "param_target": "op"<br>`new_shape`: Specifies directly the shape after Unsqueeze processing.<br>{<br>&nbsp;&nbsp;"op_name": "/backbone/backbone.1/Unsqueeze_1",<br>&nbsp;&nbsp;"param_target": "op",<br>&nbsp;&nbsp;"new_shape": [1,15,15,1]<br>}|
   |15|Reshape|1. "param_target": "inputs"<br>`values`: Value of `shape`<br>`pre_process_transpose_perm`: Transpose is applied to the tensor before the Reshape operation with the perm specified as pre-processing.<br>2. "param_target": "outputs"<br>`post_process_transpose_perm`: Transpose is applied to the tensor after the Reshape operation with the perm specified as post-processing.|
   |16|Resize|1. "param_target": "attributes"<br>`coordinate_transformation_mode`: Value of `coordinate_transformation_mode`<br>`extrapolation_value`: Value of `extrapolation_value`<br>`mode`: Value of `mode`<br>2. "param_target": "inputs"<br>`values`: Value of `roi` or `scales` or `sizes`. `scales`=`[scale_h,scale_w]`,`sizes`=`[h,w]`<br>`pre_process_transpose_perm`: Transpose is applied to the tensor before the Resize operation with the perm specified as pre-processing.<br>3. "param_target": "outputs"<br>`post_process_transpose_perm`: Transpose is applied to the tensor after the Resize operation with the perm specified as post-processing.|
-  |17|Slice|`Slice` implements special replacements separately ignore all automatic conversions and generate `tf.strided_slice` directly by specifying all parameters of `tf.strided_slice` directly.<br>https://www.tensorflow.org/api_docs/python/tf/strided_slice<br>See [replace_slice.json](https://github.com/PINTO0309/onnx2tf/blob/main/replace_slice.json) for a sample description.<br>![20221221222956](https://user-images.githubusercontent.com/33194443/208916732-9987a69a-83a7-4a29-8b77-d97b1812d59c.png)<br>1. "param_target": "op"<br>`begin`: Value of `begin`<br>`end`: Value of `end`<br>`strides`: Value of `strides`<br>`begin_mask`: Value of `begin_mask`<br>`end_mask`: Value of `end_mask`<br>`ellipsis_mask`: Value of `ellipsis_mask`<br>`new_axis_mask`: Value of `new_axis_mask`<br>`shrink_axis_mask`: Value of `shrink_axis_mask`<br>{<br>&nbsp;&nbsp;"op_name": "/Slice",<br>&nbsp;&nbsp;"param_target": "op",<br>&nbsp;&nbsp;"begin": [0,0,1,0],<br>&nbsp;&nbsp;"end": [0,0,0,0],<br>&nbsp;&nbsp;"end_mask": 15<br>}|
+  |17|Slice|`Slice` implements special replacements separately ignore all automatic conversions and generate `tf.strided_slice` directly by specifying all parameters of `tf.strided_slice` directly.<br>https://www.tensorflow.org/api_docs/python/tf/strided_slice<br>See [json_samples/replace_slice.json](https://github.com/PINTO0309/onnx2tf/blob/main/json_samples/replace_slice.json) for a sample description.<br>![20221221222956](https://user-images.githubusercontent.com/33194443/208916732-9987a69a-83a7-4a29-8b77-d97b1812d59c.png)<br>1. "param_target": "op"<br>`begin`: Value of `begin`<br>`end`: Value of `end`<br>`strides`: Value of `strides`<br>`begin_mask`: Value of `begin_mask`<br>`end_mask`: Value of `end_mask`<br>`ellipsis_mask`: Value of `ellipsis_mask`<br>`new_axis_mask`: Value of `new_axis_mask`<br>`shrink_axis_mask`: Value of `shrink_axis_mask`<br>{<br>&nbsp;&nbsp;"op_name": "/Slice",<br>&nbsp;&nbsp;"param_target": "op",<br>&nbsp;&nbsp;"begin": [0,0,1,0],<br>&nbsp;&nbsp;"end": [0,0,0,0],<br>&nbsp;&nbsp;"end_mask": 15<br>}|
   |18|Softmax|1. "param_target": "attributes"<br>`axis`: Value of `axis`. The transpositions corresponding to the specified axis are extrapolated before and after `Softmax`.<br>2. "param_target": "inputs"<br>`values`: Value of `tensor`|
   |19|Split|1. "param_target": "inputs"<br>`values`: Value of `split`<br>2. "param_target": "attributes"<br>`axis`: Value of `axis`.<br>`num_outputs`: Value of `num_outputs`.|
   |20|Sub|1. "param_target": "inputs"<br>`values`: Value of `input`<br>`pre_process_transpose_perm`: Transpose is applied to the tensor before the Sub operation with the perm specified as pre-processing.<br>2. "param_target": "outputs"<br>`post_process_transpose_perm`: Transpose is applied to the tensor after the Sub operation with the perm specified as post-processing.|

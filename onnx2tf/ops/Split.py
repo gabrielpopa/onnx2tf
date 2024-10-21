@@ -23,6 +23,220 @@ def dynamic_split_compatible(input_tensor, split_sizes, axis=0):
     # indices = tf.cumsum(split_sizes)[:-1]
     return tf.split(input_tensor, num_or_size_splits=split_sizes, axis=axis)
 
+def split_tensor_gpu_compatible(input_tensor, axis, num_or_size_splits):
+    # Get the dynamic shape and rank of the input tensor
+    input_shape = tf.shape(input_tensor)
+    input_tensor_rank = tf.rank(input_tensor)
+    
+    # Adjust negative axis values
+    axis = tf.where(axis >= 0, axis, axis + input_tensor_rank)
+    axis_int = axis.numpy() if isinstance(axis, tf.Tensor) and axis.shape == () else axis
+    
+    # Build the permutation to bring the split axis to the front
+    perm_pre = tf.expand_dims(axis_int, 0)
+    perm_post = tf.concat([tf.range(axis_int), tf.range(axis_int + 1, input_tensor_rank)], axis=0)
+    perm = tf.concat([perm_pre, perm_post], axis=0)
+    
+    # Transpose the tensor to bring the split axis to the front
+    x = tf.transpose(input_tensor, perm)
+    
+    # Merge the remaining dimensions
+    remaining_dims = tf.gather(input_shape, perm_post)
+    merged_dim = tf.reduce_prod(remaining_dims)
+    x = tf.reshape(x, tf.concat([[input_shape[axis_int]], [merged_dim]], axis=0))
+    
+    # Expand dimensions to make it 4D
+    x_shape = tf.shape(x)
+    x = tf.reshape(x, tf.concat([x_shape, [1, 1]], axis=0))  # Now x has shape [split_axis_size, merged_dim, 1, 1]
+    
+    # Perform the split along the first axis
+    split_tensors = tf.split(x, num_or_size_splits=num_or_size_splits, axis=0)
+    
+    final_tensors = []
+    for split_tensor in split_tensors:
+        # Remove the extra dimensions added earlier
+        split_tensor = tf.squeeze(split_tensor, axis=[2, 3])  # Now shape is [1, merged_dim]
+        # Reshape back to the original dimensions (excluding the split axis)
+        split_tensor = tf.reshape(split_tensor, remaining_dims)
+        # No need to permute back since the dimensions are in the correct order
+        final_tensors.append(split_tensor)
+    
+    return final_tensors
+
+def split_tensor_gpu_compatible3(input_tensor, axis, num_or_size_splits):
+    # Get the dynamic shape and rank of the input tensor
+    input_shape = tf.shape(input_tensor)
+    input_tensor_rank = tf.rank(input_tensor)
+    
+    # Adjust negative axis values
+    axis = tf.where(axis >= 0, axis, axis + input_tensor_rank)
+    
+    # Build the permutation to bring the split axis to the front
+    perm_pre = tf.expand_dims(axis, 0)
+    perm_post = tf.concat([tf.range(axis), tf.range(axis + 1, input_tensor_rank)], axis=0)
+    perm = tf.concat([perm_pre, perm_post], axis=0)
+    
+    # Transpose the tensor to bring the split axis to the front
+    x = tf.transpose(input_tensor, perm)
+    
+    # Merge the remaining dimensions
+    remaining_dims = tf.gather(input_shape, perm_post)
+    merged_dim = tf.reduce_prod(remaining_dims)
+    x = tf.reshape(x, tf.concat([[input_shape[axis]], [merged_dim]], axis=0))
+    
+    # Expand dimensions to make it 4D
+    x = tf.reshape(x, tf.concat(tf.shape(x), [1, 1]), axis=0)  # Shape becomes [split_axis_size, merged_dim, 1, 1]
+    
+    # Perform the split along the first axis
+    split_tensors = tf.split(x, num_or_size_splits=num_or_size_splits, axis=0)
+    
+    final_tensors = []
+    for split_tensor in split_tensors:
+        # Remove the extra dimensions added earlier
+        split_tensor = tf.reshape(split_tensor, [merged_dim])
+        # Reshape back to the original dimensions (excluding the split axis)
+        split_tensor = tf.reshape(split_tensor, remaining_dims)
+        # No need to permute back since the dimensions are in the correct order
+        final_tensors.append(split_tensor)
+    
+    return final_tensors
+
+def split_tensor_gpu_compatible2(input_tensor, axis, num_or_size_splits):
+    # Get the dynamic shape of the input tensor
+    input_shape = tf.shape(input_tensor)
+    input_tensor_rank = input_tensor.shape.rank
+
+    # Move the axis to split to the first dimension
+    print(f"axis: {axis}")
+    perm = [axis] + [i for i in range(input_tensor_rank) if i != axis]
+    print(f"perm: {perm}")
+    x = tf.transpose(input_tensor, perm)
+
+    # Combine the remaining dimensions into a single dimension to reduce rank to 4
+    remaining_dims = [input_shape[i] for i in perm[1:]]
+    merged_dim = tf.reduce_prod(remaining_dims)
+    x = tf.reshape(x, tf.concat([[input_shape[axis]], [merged_dim]], axis=0))
+
+    # Expand dimensions to make it a 4D tensor (if necessary)
+    x = tf.expand_dims(x, axis=-1)  # Now x has shape [split_axis_size, merged_dim, 1]
+
+    # Perform the split operation along the first axis
+    split_tensors = tf.split(x, num_or_size_splits=num_or_size_splits, axis=0)
+
+    final_tensors = []
+    for split_tensor in split_tensors:
+        # Remove the extra dimension added earlier
+        split_tensor = tf.squeeze(split_tensor, axis=-1)
+        # Reshape back to the original dimensions (except the split axis)
+        split_tensor = tf.reshape(split_tensor, remaining_dims)
+        # Permute the dimensions back to their original order
+        inverse_perm = [perm.index(i) for i in range(input_tensor_rank)]
+        split_tensor = tf.transpose(split_tensor, inverse_perm[1:])
+        final_tensors.append(split_tensor)
+
+    return final_tensors
+
+# (gp) bun
+def split_without_slice_old(input_tensor, split_sizes, axis=0):
+    # Compute the cumulative sum of split sizes to get the split points
+    split_points = tf.concat([[0], tf.cumsum(split_sizes)], axis=0)
+    
+    # Initialize an empty list to hold the split tensors
+    splits = []
+    
+    # Loop over each split size to generate the corresponding indices
+    for i in range(len(split_sizes)):
+        start = split_points[i]
+        end = split_points[i + 1]
+        indices = tf.range(start, end)
+        
+        # Use tf.gather to extract the slices along the specified axis
+        split_i = tf.gather(input_tensor, indices, axis=axis)
+        splits.append(split_i)
+    
+    return splits
+
+def split_without_slice(input_tensor, split_sizes, axis=0):
+    # Ensure split_sizes is of type int32
+    split_sizes = tf.cast(split_sizes, tf.int32)
+    
+    # Compute the cumulative sum of split sizes to get the split points
+    split_points = tf.concat([[0], tf.cumsum(split_sizes)], axis=0)
+    
+    # Ensure split_points is of type int32
+    split_points = tf.cast(split_points, tf.int32)
+    
+    # Initialize an empty list to hold the split tensors
+    splits = []
+    
+    # Loop over each split size to generate the corresponding indices
+    for i in range(len(split_sizes)):
+        start = split_points[i]
+        end = split_points[i + 1]
+        
+        # Use tf.range to generate indices and ensure they are int32
+        indices = tf.range(start, end, dtype=tf.int32)
+        
+        # Use tf.gather to extract the slices along the specified axis
+        split_i = tf.gather(input_tensor, indices, axis=axis)
+        splits.append(split_i)
+    
+    return splits
+
+def split_using_unstack(input_tensor, split_sizes, axis=0):
+    # Unstack the tensor along the specified axis
+    unstacked = tf.unstack(input_tensor, axis=axis)
+    
+    # Initialize list for splits
+    splits = []
+    index = 0
+    for size in split_sizes:
+        # Extract the slices for the current split
+        split_i = unstacked[index:index + size]
+        # Stack them back along the same axis
+        split_tensor = tf.stack(split_i, axis=axis)
+        splits.append(split_tensor)
+        index += size
+    return splits
+
+def split_without_slice_high_dim(input_tensor, split_sizes, axis=0):
+    # Ensure split_sizes are int32
+    split_sizes = tf.cast(split_sizes, tf.int32)
+    
+    # Get the rank of the input tensor
+    input_rank = tf.rank(input_tensor)
+    
+    # Create a permutation that moves the split axis to the first dimension
+    perm = tf.concat([[axis], tf.range(axis), tf.range(axis + 1, input_rank)], axis=0)
+    transposed = tf.transpose(input_tensor, perm)
+    
+    # Flatten the rest of the dimensions
+    transposed_shape = tf.shape(transposed)
+    reshaped = tf.reshape(transposed, [transposed_shape[0], -1])
+    
+    # Compute split points
+    split_points = tf.concat([[0], tf.cumsum(split_sizes)], axis=0)
+    split_points = tf.cast(split_points, tf.int32)
+    
+    splits = []
+    for i in range(len(split_sizes)):
+        start = split_points[i]
+        end = split_points[i + 1]
+        indices = tf.range(start, end, dtype=tf.int32)
+        split_i = tf.gather(reshaped, indices, axis=0)
+        
+        # Reshape back to original dimensions
+        split_dim = end - start
+        split_shape = tf.concat([[split_dim], transposed_shape[1:]], axis=0)
+        split_i = tf.reshape(split_i, split_shape)
+        
+        # Transpose back to original axis order
+        inv_perm = tf.math.invert_permutation(perm)
+        split_i = tf.transpose(split_i, inv_perm)
+        
+        splits.append(split_i)
+    
+    return splits
 
 @print_node_info
 @inverted_operation_enable_disable
@@ -68,7 +282,6 @@ def make_node(
 
     shape = graph_node_outputs[0].shape
     dtype = graph_node_outputs[0].dtype
-
     axis = graph_node.attrs.get('axis', 0)
     # NCHW->NHWC, NCDHW->NDHWC
     axis = convert_axis(
@@ -156,29 +369,10 @@ def make_node(
         and np.prod(split) == 1 \
         and isinstance(input_tensor_shape[axis], int) \
         and input_tensor_shape[axis] == len(list(split)):
-        # strided_slice - Slice everything in size 1
-        # Suppression of FlexSplitV generation
-        splited_tensors = []
-        for split_idx in range(len(list(split))):
-            begin_ = [
-                split_idx if idx == axis else 0 for idx in range(input_tensor_rank)
-            ]
-            end_ = []
-            for idx in range(input_tensor_rank):
-                if idx == axis:
-                    end_.append(split_idx + 1)
-                elif input_tensor_shape[idx] is None:
-                    end_.append(-1)
-                else:
-                    end_.append(input_tensor_shape[idx])
 
-            splited_tensors.append(
-                tf.strided_slice(
-                    input_=input_tensor,
-                    begin=begin_,
-                    end=end_,
-                )
-            )
+        splited_tensors = split_using_unstack(input_tensor, split, axis)
+        
+
     elif isinstance(split, np.ndarray) \
         and len(list(split)) > 1 \
         and np.prod(split) != 1 \
@@ -223,6 +417,7 @@ def make_node(
                     begin_mask_ = begin_mask_ + 2**idx
                     end_mask_ = end_mask_ + 2**idx
 
+            exit(3)
             splited_tensors.append(
                 tf.strided_slice(
                     input_=input_tensor,

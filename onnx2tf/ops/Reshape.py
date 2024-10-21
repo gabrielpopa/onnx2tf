@@ -24,7 +24,113 @@ from onnx2tf.utils.common_functions import (
     onnx_tf_tensor_validation,
 )
 from typing import List, Dict, Any
+from onnx2tf.utils.logging import *
 
+def find_divisible_by_3_pair(n):
+    # Start checking from the square root of the number and work downward
+    for i in range(int(n ** 0.5), 0, -1):
+        if n % i == 0:  # Check if i is a divisor
+            pair = (i, n // i)  # Pair is (i, n // i)
+            # Ensure the first number is divisible by 3
+            if pair[0] % 3 == 0:
+                return pair  # Return the larger number first
+            if pair[1] % 3 == 0:
+                return (pair[1], pair[0])  # Return the larger number first
+    return None  # If no valid pair is found
+
+
+def reshape_tensor_without_5d_reshape(input_tensor, input_shape, output_shape):
+    """
+    Reshape a tensor from input_shape to output_shape without directly using
+    tf.reshape or tf.transpose on tensors with more than 4 dimensions.
+
+    Parameters:
+    - input_tensor: The input tensor to reshape.
+    - input_shape: The shape of the input tensor.
+    - output_shape: The desired output shape.
+
+    Returns:
+    - output_tensor: The reshaped tensor.
+    """
+    # Check that the total number of elements matches
+    total_input_elements = np.prod(input_shape)
+    total_output_elements = np.prod(output_shape)
+    if total_input_elements != total_output_elements:
+        raise ValueError("Total number of elements must be the same in input and output shapes")
+
+    pair = find_divisible_by_3_pair(input_tensor.shape[-1])
+
+    # Reshape input_tensor to a 4D tensor of shape [batch, channels, new_height, new_width]
+    reshaped_tensor = tf.reshape(input_tensor, [input_shape[0], input_shape[1], pair[0], pair[1]])
+
+    # Transpose within 4D limits to rearrange dimensions
+    reshaped_tensor = tf.transpose(reshaped_tensor, perm=[0, 1, 3, 2])
+
+    # Split the last dimension into 3 tensors
+    split_tensors = tf.split(reshaped_tensor, num_or_size_splits=3, axis=-1)
+
+    # Stack the split tensors along a new axis to simulate higher dimensions
+    return tf.stack(split_tensors, axis=2)
+
+def reshape_to_nd(input_tensor, input_shape, output_shape):
+    """
+    Reshape a tensor to the desired output shape, handling cases where reshaping
+    directly to a 5D or higher shape is not supported.
+
+    Parameters:
+    - input_tensor: Tensor to reshape.
+    - input_shape: Shape of the input tensor (tuple or list).
+    - output_shape: Desired output shape (tuple or list).
+    
+    Returns:
+    - reshaped_tensor: Tensor reshaped to the target shape.
+    """
+
+    # Calculate total elements to ensure reshape is possible
+    total_input_elements = np.prod(input_shape)
+    total_output_elements = np.prod(output_shape)
+
+    if total_input_elements != total_output_elements:
+        raise ValueError("Total number of elements in input and output shapes must be the same.")
+
+    # We need to reshape in steps since direct reshaping to 5D or 6D isn't allowed
+    reshaped_tensor = input_tensor
+
+    # Flatten the tensor first to simplify manipulation, if not already flat
+    reshaped_tensor = tf.reshape(reshaped_tensor, [-1])  # Flatten
+
+    # Step-by-step reshape back into the desired shape within 4D limits
+    current_shape = [-1]  # Start from a flat tensor
+    for i in range(len(output_shape)):
+        # Determine how much of the current output shape we can build in this step
+        if len(current_shape) < 4:
+            current_shape.append(output_shape[i])  # Add a new dimension to current shape
+        else:
+            # When we reach 4D, stop adding dimensions and handle the rest separately
+            remaining_shape = output_shape[i:]
+            break
+    else:
+        # If we can fully build the output shape within 4D, we're done
+        remaining_shape = []
+
+    # Reshape within 4D constraints
+    reshaped_tensor = tf.reshape(reshaped_tensor, current_shape)
+
+    # If we have remaining dimensions to deal with (i.e., 5D or higher)
+    if remaining_shape:
+        # We'll need to split the existing last dimension
+        for dim in remaining_shape:
+            # Split the last dimension into multiple smaller chunks
+            last_dim_size = reshaped_tensor.shape[-1]
+            print(f"last_dim_size: {last_dim_size}")
+            assert last_dim_size % dim == 0, "Remaining dimensions must evenly divide the last dimension."
+            new_size = last_dim_size // dim
+            reshaped_tensor = tf.reshape(reshaped_tensor, reshaped_tensor.shape[:-1] + [dim, new_size])
+        
+        # Now stack along the newly split dimensions to build up the desired shape
+        reshaped_tensor = tf.reshape(reshaped_tensor, output_shape)
+
+    return reshaped_tensor
 
 @print_node_info
 @inverted_operation_enable_disable
@@ -321,7 +427,11 @@ def make_node(
                                         ]
                                         enable_space_to_depth = True
 
-        if not enable_space_to_depth:
+        if len(final_shape) > 4:
+            warn(f"(gp) Do not reshape to 5d and 6d dimensions tensors directly.")
+            reshaped_tensor = reshape_tensor_without_5d_reshape(input_tensor, input_tensor.shape, final_shape)
+            tf_layers_dict[graph_node_output.name]['tf_node'] = reshaped_tensor
+        elif not enable_space_to_depth:
             # Reshape
             tf_layers_dict[graph_node_output.name]['tf_node'] = \
                 tf.reshape(

@@ -22,7 +22,7 @@ from onnx2tf.utils.common_functions import (
     onnx_tf_tensor_validation,
 )
 from typing import List, Dict, Any
-
+from onnx2tf.utils.logging import *
 
 @print_node_info
 @inverted_operation_enable_disable
@@ -124,6 +124,7 @@ def make_node(
         else:
             # Force a split in two 4D transposes.
             # Slower to run (more layers), but at least it runs on the GPU.
+            warn("(gp) Force a split in two 4D transposes.")
             x = tf.reshape(input_tensor, (batch * height * width, csize, blocksize, blocksize))  # Fold BHW
             x = tf.transpose(x, (0, 3, 1, 2))
             x = tf.reshape(x, (batch * height, width * blocksize, csize, blocksize))  # Fold W, blocksize

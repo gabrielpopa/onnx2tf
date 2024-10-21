@@ -18,7 +18,7 @@ from onnx2tf.utils.common_functions import (
     post_process_transpose,
 )
 from onnx2tf.utils.enums import NUMPY_DTYPES_TO_TF_DTYPES
-
+from onnx2tf.utils.logging import *
 
 @print_node_info
 @inverted_operation_enable_disable
@@ -150,6 +150,7 @@ def make_node(
         )
         tf_op_type = 'alternative_argmax'
     elif replace_argmax_to_reducemax_new:
+        warn("(gp) Use of alternative argMax.")
         final_tensor = alternative_argmax_new(
             input_tensor=reversed_tensor,
             axis=axis,

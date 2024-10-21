@@ -1,29 +1,109 @@
 #!/bin/zsh
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+N='\033[0m' # No Color
 
 # perm_possible=("[0,3,1,2]" "[0,2,1,3]" "[0,3,2,1]")
 perm_possible=("[0,3,1,2]" "[0,3,2,1]")
 
-if [ "$#" -eq 1 ]; then
-    onnx_file="$1"
-    json_file="${onnx_file%.onnx}_generated.json"
-elif [ "$#" -eq 2 ]; then
-    onnx_file="$1"
-    json_file="$2"
-elif [ "$#" -gt 2 ]; then
-    onnx_file="$1"
-    json_file="$2"
-    perm_possible=("${@:3}") # Capture all arguments from the third onwards as perm_possible
-else
-    echo "Usage: $0 <onnx_file>"
-    echo "Usage: $0 <onnx_file> [<json_file>]"
-    echo "Usage: $0 <onnx_file> [<json_file>] [<perm_possible>...]"
+show_help() {
+    echo "Usage: $0 [options]"
     echo ""
-    echo "Example: $0 caformer.onnx caformer.json \"[0,3,1,2]\" \"[0,2,1,3]\" \"[0,3,2,1]\""
-    exit 1
-fi
+    echo "This script runs the convert onnx2tf script."
+    echo ""
+    echo "Options:"
+    echo "  -h                Display this help message and exit."
+    echo "  -f FILENAME       Specify the ONNX file to convert."
+    echo "  -r FILENAME       Specify the json file for param_replacement_file instructions."
+    echo "  -b                Specify batch size 1."
+    echo "  -i                Export int8 file."
+    echo "  -p 1e-4           PRECISION! Slow, but accurate generation"
+    echo "  -s output name    Split model at output name."
+    echo ""
+    echo "Example:"
+    echo "  $0 -f path_to_file.onnx"
+}
+
+onnx_file=""
+split=""
+batch=""
+export_int=""
+split_at=""
+precision=""
+
+while getopts "f:p:r:s:bi" opts; do         
+  case "${opts}" in                    # 
+    r)         
+      repl=${OPTARG}
+      ;;
+    b)         
+      batch="-b 1"
+      ;;
+    i)         
+      export_int="-ei"
+      echo "Exporting int8"
+      ;;
+    s)         
+      split_at="${OPTARG}"
+      ;;
+    f)               
+      onnx_file=${OPTARG}
+      base_name="${onnx_file%.*}"
+      if [ -z "$repl" ]; then
+        json_file="${base_name}_generated.json"
+      fi  
+      ;;
+    p)     
+      # precision="--disable_strict_mode -cotof -cotoa 1e-4"   
+      precision="${OPTARG}"
+      ;;
+    h)         
+      show_help
+      exit 1
+      ;;
+    v)                             
+      VERBOSE="verbose=true --print_preinvoke_state=true --print_postinvoke_state=true"     
+      ;;
+    :)                                    # If expected argument omitted:
+      echo "Error: -${OPTARG} requires an argument."
+      show_help
+      exit                       # Exit abnormally.
+      ;;
+    *)                                    # If unknown (any other) option:
+      show_help
+      exit                       # Exit abnormally.
+      ;;
+  esac
+done
+
+json_file="${onnx_file%.onnx}_generated.json"
+output_file="${onnx_file%.onnx}_output.txt"
+
+# if [ "$#" -eq 1 ]; then
+#     json_file="${onnx_file%.onnx}_generated.json"
+# elif [ "$#" -eq 2 ]; then
+#     onnx_file="$1"
+#     json_file="$2"
+# elif [ "$#" -gt 2 ]; then
+#     onnx_file="$1"
+#     json_file="$2"
+#     perm_possible=("${@:3}") # Capture all arguments from the third onwards as perm_possible
+# else
+#     echo "Usage: $0 <onnx_file>"
+#     echo "Usage: $0 <onnx_file> [<json_file>]"
+#     echo "Usage: $0 <onnx_file> [<json_file>] [<perm_possible>...]"
+#     echo ""
+#     echo "Example: $0 caformer.onnx caformer.json \"[0,3,1,2]\" \"[0,2,1,3]\" \"[0,3,2,1]\""
+#     exit 1
+# fi
 
 if [[ "$json_file" != *.json ]]; then
     echo "Error: The json file ($json_file) must have a .json extension."
+    exit 2
+fi
+
+if [ -z "$onnx_file" ]; then
+    show_help
     exit 2
 fi
 
@@ -37,7 +117,31 @@ if [ ! -f "$json_file" ]; then
     echo "Created $json_file with initial content."
 fi
 
-command="python3 onnx2tf/onnx2tf.py --optimization_for_gpu_delegate --replace_argmax_to_reducemax_new --not_use_opname_auto_generate --disable_group_convolution --disable_strict_mode -v debug --param_replacement_file $json_file -i $onnx_file -dsft -dsfs"
+PARMS=("-i" "${onnx_file}" "--param_replacement_file" "${json_file}" "--replace_argmax_to_reducemax_new" "--optimization_for_gpu_delegate" "--not_use_opname_auto_generate" "--disable_group_convolution" "-v debug" "--replace_to_pseudo_operators Erf")
+
+if [ -n "$split_at" ]; then
+    echo "Split model at: ${GREEN}$split_at${N}"
+    PARMS+=("-onimc" "${split_at}")
+fi
+
+if [ -n "$batch" ]; then
+    PARMS+=("-b" "1")
+fi
+
+if [ -n "$export_int" ]; then
+    PARMS+=("-ei")
+fi
+
+if [ -n "$precision" ]; then
+    PARMS+=("-cotof" "-cotoa" $precision)
+else
+    PARMS+=("--disable_strict_mode" "-cotof" "-cotoa" "1e-4")
+fi
+
+echo "Converting $name: ${GREEN}$onnx_file${N} to tflite with replacement file ${GREEN}$json_file${N}."
+echo "PARMS are: ${PARMS[@]}${N}."
+
+command="python3 onnx2tf/onnx2tf.py ${PARMS[@]}"
 layer=0
 perm_counter=0
 current_perm=${perm_possible[$perm_counter]}
@@ -428,6 +532,7 @@ handle_error() {
     elif echo "$output" | grep -q "File specified in param_replacement_file not found."; then
         echo "File specified in param_replacement_file not found. "
         touch $json_file
+        return 1
     elif echo "$output" | grep -q "The file specified in param_replacement_file is not in JSON format"; then
         echo "{\"operations\": []}" > $json_file
     else
@@ -440,10 +545,17 @@ handle_error() {
 
 while true; do
     echo "Running conversion..."
-    output=$(eval "$command" 2>&1 | tee /dev/tty)
-    status=$?
+    output=$(eval "$command" 2>&1 | tee /dev/tty $output_file)
+    statuss="0"
+    if [ -n "$ZSH_VERSION" ]; then
+        statuss=${pipestatus[1]}
+    else
+        statuss=${PIPESTATUS[0]}
+    fi
 
-    if [ $status -eq 0 ]; then
+    echo "Status $statuss"
+    # if [ $statuss -eq 0 ]; then
+    if echo "$output" | grep -q "Float16 tflite output complete"; then
         echo "Done!"
         break
     else

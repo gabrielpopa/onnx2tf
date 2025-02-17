@@ -19,7 +19,9 @@ show_help() {
     echo "  -i                Export int8 file."
     echo "  -p 1e-4           PRECISION! Slow, but accurate generation"
     echo "  -s output name    Split model at output name."
-    echo ""
+    echo "  -d                Exporting Dynamic range quantized"
+    echo "  -q                Exporting Integer quantized"
+    echo "  -s output name    Split model at output name."
     echo "Example:"
     echo "  $0 -f path_to_file.onnx"
 }
@@ -30,8 +32,10 @@ batch=""
 export_int=""
 split_at=""
 precision=""
+dynq=""
+intq=""
 
-while getopts "f:p:r:s:bi" opts; do         
+while getopts "f:p:r:s:biqd" opts; do         
   case "${opts}" in                    # 
     r)         
       repl=${OPTARG}
@@ -42,6 +46,14 @@ while getopts "f:p:r:s:bi" opts; do
     i)         
       export_int="-ei"
       echo "Exporting int8"
+      ;;
+    d)         
+      dynq="--output_dynamic_range_quantized_tflite"
+      echo "Exporting Dynamic range quantized"
+      ;;
+    q)         
+      intq="--output_integer_quantized_tflite"
+      echo "Exporting Integer quantized"
       ;;
     s)         
       split_at="${OPTARG}"
@@ -130,6 +142,14 @@ fi
 
 if [ -n "$export_int" ]; then
     PARMS+=("-ei")
+fi
+
+if [ -n "$intq" ]; then
+    PARMS+=("$intq")
+fi
+
+if [ -n "$dynq" ]; then
+    PARMS+=("$dynq")
 fi
 
 if [ -n "$precision" ]; then

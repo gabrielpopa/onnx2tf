@@ -265,12 +265,20 @@ Video speed is adjusted approximately 50 times slower than actual speed.
 - psutil==5.9.5
 - ml_dtypes==0.3.2
 - flatbuffers-compiler (Optional, Only when using the `-coion` option. Executable file named `flatc`.)
-- flatbuffers>=23.5.26
+- flatbuffers>=23.1.21
   ```bash
-  # Custom flatc v23.5.26 binary for Ubuntu 20.04+
+  # Custom flatc binary for Ubuntu 22.04+
   # https://github.com/PINTO0309/onnx2tf/issues/196
+
+  # x86_64/amd64 v23.5.26
   wget https://github.com/PINTO0309/onnx2tf/releases/download/1.16.31/flatc.tar.gz \
   && tar -zxvf flatc.tar.gz \
+  && sudo chmod +x flatc \
+  && sudo mv flatc /usr/bin/
+
+  # arm64 v23.1.21
+  wget https://github.com/PINTO0309/onnx2tf/releases/download/1.26.6/flatc_arm64.tar.gz \
+  && tar -zxvf flatc_arm64.tar.gz \
   && sudo chmod +x flatc \
   && sudo mv flatc /usr/bin/
   ```
@@ -299,7 +307,7 @@ Video speed is adjusted approximately 50 times slower than actual speed.
   docker run --rm -it \
   -v `pwd`:/workdir \
   -w /workdir \
-  ghcr.io/pinto0309/onnx2tf:1.25.14
+  ghcr.io/pinto0309/onnx2tf:1.26.8
 
   or
 
@@ -307,7 +315,7 @@ Video speed is adjusted approximately 50 times slower than actual speed.
   docker run --rm -it \
   -v `pwd`:/workdir \
   -w /workdir \
-  docker.io/pinto0309/onnx2tf:1.26.0
+  docker.io/pinto0309/onnx2tf:1.26.8
 
   or
 
@@ -375,7 +383,9 @@ Only patterns that are considered to be used particularly frequently are describ
 # Improved to automatically generate `signature` without `-osd` starting from v1.25.3.
 # Also, starting from v1.24.0, efficient TFLite can be generated
 # without unrolling `GroupConvolution`. e.g. YOLOv9, YOLOvN
+
 # Conversion to other frameworks. e.g. TensorFlow.js, CoreML, etc
+
 # https://github.com/PINTO0309/onnx2tf#19-conversion-to-tensorflowjs
 # https://github.com/PINTO0309/onnx2tf#20-conversion-to-coreml
 wget https://github.com/PINTO0309/onnx2tf/releases/download/0.0.2/resnet18-v1-7.onnx
@@ -1396,6 +1406,7 @@ onnx2tf -i model.onnx -b 1 -osd
 
   ![image](https://github.com/PINTO0309/onnx2tf/assets/33194443/ccad4eaa-ce1d-46aa-80e9-9720467a3afb)
 
+
 Click here to see how to perform inference using the dynamic shape tensor.
 
 https://github.com/PINTO0309/onnx2tf/tree/main?tab=readme-ov-file#14-inference-with-dynamic-tensors-in-tflite
@@ -1448,9 +1459,13 @@ For example, take a model with multiple inputs and multiple outputs as shown in 
 When converting to TensorFlow.js, process as follows.
 
 ```bash
-pip install tensorflowjs
+pip install -U --no-deps \
+tensorflowjs \
+tensorflow_decision_forests \
+ydf \
+tensorflow_hub
 
-onnx2tf -i mobilenetv2-12.onnx -ois input:1,3,224,224 -osd
+onnx2tf -i mobilenetv2-12.onnx -ois input:1,3,224,224 -osd -dgc
 
 tensorflowjs_converter \
 --input_format tf_saved_model \
@@ -1522,6 +1537,7 @@ usage: onnx2tf
 [-ois OVERWRITE_INPUT_SHAPE [OVERWRITE_INPUT_SHAPE ...]]
 [-nlt]
 [-onwdt]
+[-snms {v4,v5}]
 [-k KEEP_NCW_OR_NCHW_OR_NCDHW_INPUT_NAMES [KEEP_NCW_OR_NCHW_OR_NCDHW_INPUT_NAMES ...]]
 [-kt KEEP_NWC_OR_NHWC_OR_NDHWC_INPUT_NAMES [KEEP_NWC_OR_NHWC_OR_NDHWC_INPUT_NAMES ...]]
 [-kat KEEP_SHAPE_ABSOLUTELY_INPUT_NAMES [KEEP_SHAPE_ABSOLUTELY_INPUT_NAMES ...]]
@@ -1674,11 +1690,11 @@ optional arguments:
 
   -iqd {int8,uint8,float32}, --input_quant_dtype {int8,uint8,float32}
     Input dtypes when doing Full INT8 Quantization.
-    "int8"(default) or "uint8"
+    "int8"(default) or "uint8" or "float32"
 
   -oqd {int8,uint8,float32}, --output_quant_dtype {int8,uint8,float32}
     Output dtypes when doing Full INT8 Quantization.
-    "int8"(default) or "uint8"
+    "int8"(default) or "uint8" or "float32"
 
   -nuo, --not_use_onnxsim
     No optimization by onnx-simplifier is performed.
@@ -1720,6 +1736,12 @@ optional arguments:
         output_tensor_shape: [100, 7]
     enable --output_nms_with_dynamic_tensor:
         output_tensor_shape: [N, 7]
+
+  -snms {v4,v5}, --switch_nms_version {v4,v5}
+    Switch the NMS version to V4 or V5 to convert.
+    e.g.
+    NonMaxSuppressionV4(default): --switch_nms_version v4
+    NonMaxSuppressionV5: --switch_nms_version v5
 
   -k KEEP_NCW_OR_NCHW_OR_NCDHW_INPUT_NAMES [KEEP_NCW_OR_NCHW_OR_NCDHW_INPUT_NAMES ...], \
       --keep_ncw_or_nchw_or_ncdhw_input_names KEEP_NCW_OR_NCHW_OR_NCDHW_INPUT_NAMES \
@@ -2006,6 +2028,7 @@ convert(
   overwrite_input_shape: Union[List[str], NoneType] = None,
   no_large_tensor: Optional[bool] = False,
   output_nms_with_dynamic_tensor: Optional[bool] = False,
+  switch_nms_version: Optional[str] = 'v4',
   keep_ncw_or_nchw_or_ncdhw_input_names: Union[List[str], NoneType] = None,
   keep_nwc_or_nhwc_or_ndhwc_input_names: Union[List[str], NoneType] = None,
   keep_shape_absolutely_input_names: Optional[List[str]] = None,
@@ -2210,6 +2233,12 @@ convert(
           output_tensor_shape: [100, 7]
       enable --output_nms_with_dynamic_tensor:
           output_tensor_shape: [N, 7]
+
+    switch_nms_version {v4,v5}
+      Switch the NMS version to V4 or V5 to convert.
+      e.g.
+      NonMaxSuppressionV4(default): switch_nms_version="v4"
+      NonMaxSuppressionV5: switch_nms_version="v5"
 
     keep_ncw_or_nchw_or_ncdhw_input_names: Optional[List[str]]
       Holds the NCW or NCHW or NCDHW of the input shape for the specified INPUT OP names.

@@ -18,6 +18,7 @@ show_help() {
     echo "  -b                Specify batch size 1."
     echo "  -i                Export int8 file."
     echo "  -p 1e-4           PRECISION! Slow, but accurate generation"
+    echo "  -e erf_winitzki   Replase with pseudo operations"
     echo "  -s output name    Split model at output name."
     echo "  -d                Exporting Dynamic range quantized"
     echo "  -q                Exporting Integer quantized"
@@ -34,8 +35,9 @@ split_at=""
 precision=""
 dynq=""
 intq=""
+pseudo=""
 
-while getopts "f:p:r:s:biqd" opts; do         
+while getopts "e:f:p:r:s:biqd" opts; do       
   case "${opts}" in                    # 
     r)         
       repl=${OPTARG}
@@ -68,6 +70,9 @@ while getopts "f:p:r:s:biqd" opts; do
     p)     
       # precision="--disable_strict_mode -cotof -cotoa 1e-4"   
       precision="${OPTARG}"
+      ;;
+    e)     
+      pseudo="${OPTARG}"
       ;;
     h)         
       show_help
@@ -129,7 +134,7 @@ if [ ! -f "$json_file" ]; then
     echo "Created $json_file with initial content."
 fi
 
-PARMS=("-i" "${onnx_file}" "--param_replacement_file" "${json_file}" "--replace_argmax_to_reducemax_new" "--optimization_for_gpu_delegate" "--not_use_opname_auto_generate" "--disable_group_convolution" "-v debug" "--replace_to_pseudo_operators Erf")
+PARMS=("-i" "${onnx_file}" "--param_replacement_file" "${json_file}" "--replace_argmax_to_reducemax_new" "--optimization_for_gpu_delegate" "--not_use_opname_auto_generate" "--disable_group_convolution" "-v debug")
 
 if [ -n "$split_at" ]; then
     echo "Split model at: ${GREEN}$split_at${N}"
@@ -156,6 +161,10 @@ if [ -n "$precision" ]; then
     PARMS+=("-cotof" "-cotoa" $precision)
 else
     PARMS+=("--disable_strict_mode" "-cotof" "-cotoa" "1e-4")
+fi
+
+if [ -n "$pseudo" ]; then
+    PARMS+=("--replace_to_pseudo_operators" $pseudo)
 fi
 
 echo "Converting $name: ${GREEN}$onnx_file${N} to tflite with replacement file ${GREEN}$json_file${N}."

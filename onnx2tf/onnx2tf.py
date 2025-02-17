@@ -109,6 +109,7 @@ def convert(
     overwrite_input_shape: Optional[List[str]] = None,
     no_large_tensor: Optional[bool] = False,
     output_nms_with_dynamic_tensor: Optional[bool] = False,
+    switch_nms_version: Optional[str] = 'v4',
     keep_ncw_or_nchw_or_ncdhw_input_names: Optional[List[str]] = None,
     keep_nwc_or_nhwc_or_ndhwc_input_names: Optional[List[str]] = None,
     keep_shape_absolutely_input_names: Optional[List[str]] = None,
@@ -300,6 +301,12 @@ def convert(
             output_tensor_shape: [100, 7]\n
         enable --output_nms_with_dynamic_tensor:\n
             output_tensor_shape: [N, 7]
+
+    switch_nms_version: Optional[str]
+        Switch the NMS version to V4 or V5 to convert.\n\n
+        e.g.\n
+        NonMaxSuppressionV4(default): --switch_nms_version v4\n
+        NonMaxSuppressionV5: --switch_nms_version v5
 
     keep_ncw_or_nchw_or_ncdhw_input_names: Optional[List[str]]
         Holds the NCW or NCHW or NCDHW of the input shape for the specified INPUT OP names.\n
@@ -955,6 +962,7 @@ def convert(
         'mvn_epsilon': mvn_epsilon,
         'output_signaturedefs': output_signaturedefs,
         'output_nms_with_dynamic_tensor': output_nms_with_dynamic_tensor,
+        'switch_nms_version': switch_nms_version,
         'output_integer_quantized_tflite': output_integer_quantized_tflite,
         'gelu_replace_op_names': {},
         'space_to_depth_replace_op_names': {},
@@ -1335,7 +1343,9 @@ def convert(
             func=lambda *inputs : model(inputs),
             input_signature=[tf.TensorSpec(tensor.shape, tensor.dtype, tensor.name) for tensor in model.inputs],
         )
+
         concrete_func = run_model.get_concrete_function()
+        info(Color.GREEN(f'Create concrete func!'))
 
         info(Color.GREEN(f'Create concrete func!'))
         concrete_func = run_model.get_concrete_function()
@@ -1350,13 +1360,9 @@ def convert(
             if not output_signaturedefs and not output_integer_quantized_tflite:
                 tf.saved_model.save(model, output_folder_path)
             else:
-                export_archive = tf_keras.export.ExportArchive()
-                export_archive.add_endpoint(
-                    name=SIGNATURE_KEY,
-                    fn=lambda *inputs : model(inputs),
-                    input_signature=[tf.TensorSpec(tensor.shape, tensor.dtype, tensor.name) for tensor in model.inputs],
-                )
-                export_archive.write_out(output_folder_path)
+                tf.saved_model.save(model, output_folder_path)
+                # tf.saved_model.save(concrete_func, output_folder_path, save_format='h5')
+
             info(Color.GREEN(f'saved_model output complete!'))
         except TypeError as e:
             raise e
@@ -1711,6 +1717,7 @@ def convert(
                             mean,
                             std,
                         ]
+
             elif custom_input_op_name_np_data_path is not None:
                 for param in custom_input_op_name_np_data_path:
                     if len(param) != 4:
@@ -1737,11 +1744,14 @@ def convert(
 
             # representative_dataset_gen
             def representative_dataset_gen():
-                for idx in range(data_count):
+                batch_size = model.inputs[0].shape[0]
+                if not isinstance(batch_size, int):
+                    batch_size = 1
+                for idx in range(0, data_count, batch_size):
                     yield_data_dict = {}
                     for model_input_name in model_input_name_list:
                         calib_data, mean, std = calib_data_dict[model_input_name]
-                        normalized_calib_data: np.ndarray = (calib_data[idx] - mean) / std
+                        normalized_calib_data: np.ndarray = (calib_data[idx:idx+batch_size] - mean) / std
                         yield_data_dict[model_input_name] = tf.cast(tf.convert_to_tensor(normalized_calib_data), tf.float32)
                     yield yield_data_dict
 
@@ -1793,7 +1803,7 @@ def convert(
                     inf_type_input = tf.float32
                 else:
                     inf_type_input = tf.int8
-                
+
                 if output_quant_dtype == 'int8':
                     inf_type_output = tf.int8
                 elif output_quant_dtype == 'uint8':
@@ -2315,6 +2325,18 @@ def main():
             '    output_tensor_shape: [N, 7]'
     )
     parser.add_argument(
+        '-snms',
+        '--switch_nms_version',
+        type=str,
+        choices=['v4', 'v5'],
+        default='v4',
+        help=\
+            'Switch the NMS version to V4 or V5 to convert. \n' +
+            'e.g. \n' +
+            'NonMaxSuppressionV4(default): --switch_nms_version v4 \n' +
+            'NonMaxSuppressionV5: --switch_nms_version v5'
+    )
+    parser.add_argument(
         '-k',
         '--keep_ncw_or_nchw_or_ncdhw_input_names',
         type=str,
@@ -2721,6 +2743,7 @@ def main():
         overwrite_input_shape=args.overwrite_input_shape,
         no_large_tensor=args.no_large_tensor,
         output_nms_with_dynamic_tensor=args.output_nms_with_dynamic_tensor,
+        switch_nms_version=args.switch_nms_version,
         keep_ncw_or_nchw_or_ncdhw_input_names=args.keep_ncw_or_nchw_or_ncdhw_input_names,
         keep_nwc_or_nhwc_or_ndhwc_input_names=args.keep_nwc_or_nhwc_or_ndhwc_input_names,
         keep_shape_absolutely_input_names=args.keep_shape_absolutely_input_names,

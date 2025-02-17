@@ -338,7 +338,7 @@ def make_node(
 
         # Automatic correction of accuracy degradation
         min_abs_err = sys.maxsize
-        min_abs_err_perm_1: List[int] = []
+        min_abs_err_perm_1: List[int] = [idx for idx in range(len(mean.shape))]
         check_length = 0
         if input_tensor.shape is not None and mean.shape is not None and len(input_tensor.shape) >= len(mean.shape):
             check_length = len(input_tensor.shape)
@@ -542,6 +542,7 @@ def make_node(
                                 ),
                             variance_epsilon=epsilon,
                         )
+
                 tf_type = tf.nn.batch_normalization
 
     # Post-process transpose

@@ -71,6 +71,8 @@ def make_node(
     # NCHW->NHWC, NCDHW->NDHWC
     axis = convert_axis(
         axis=axis,
+        # (gp) Fix for bad shape.
+        # tensor_rank=0 if graph_node_input.shape is None else len(graph_node_input.shape),
         tensor_rank=len(graph_node_input.shape) if graph_node_input.shape is not None else len(input_tensor.shape),
         before_op_output_shape_trans=before_op_output_shape_trans,
     )

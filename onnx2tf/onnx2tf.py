@@ -1347,6 +1347,9 @@ def convert(
         concrete_func = run_model.get_concrete_function()
         info(Color.GREEN(f'Create concrete func!'))
 
+        info(Color.GREEN(f'Create concrete func!'))
+        concrete_func = run_model.get_concrete_function()
+
         SIGNATURE_KEY = 'serving_default'
 
 

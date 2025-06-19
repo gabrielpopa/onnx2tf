@@ -129,6 +129,7 @@ def convert(
     replace_argmax_to_reducemax_and_indices_is_int64: Optional[bool] = False,
     replace_argmax_to_reducemax_and_indices_is_float32: Optional[bool] = False,
     replace_argmax_to_reducemax_new: Optional[bool] = False,
+    depth_to_space_crd_fix: Optional[bool] = False,
     replace_argmax_to_fused_argmax_and_indices_is_int64: Optional[bool] = False,
     replace_argmax_to_fused_argmax_and_indices_is_float32: Optional[bool] = False,
     fused_argmax_scale_ratio: Optional[float] = 0.5,
@@ -970,6 +971,7 @@ def convert(
         'replace_argmax_to_reducemax_and_indices_is_int64': replace_argmax_to_reducemax_and_indices_is_int64,
         'replace_argmax_to_reducemax_and_indices_is_float32': replace_argmax_to_reducemax_and_indices_is_float32,
         'replace_argmax_to_reducemax_new': replace_argmax_to_reducemax_new,
+        'depth_to_space_crd_fix': depth_to_space_crd_fix,
         'replace_argmax_to_fused_argmax_and_indices_is_int64': replace_argmax_to_fused_argmax_and_indices_is_int64,
         'replace_argmax_to_fused_argmax_and_indices_is_float32': replace_argmax_to_fused_argmax_and_indices_is_float32,
         'fused_argmax_scale_ratio': fused_argmax_scale_ratio,
@@ -2571,6 +2573,14 @@ def main():
             'replace_argmax_to_fused_argmax_and_indices_is_float32 can be specified.'
     )
     parser.add_argument(
+        '-dtsc',
+        '--depth_to_space_crd_fix',
+        action='store_true',
+        help=\
+            '# Transposing 6D tensors are not supported by the current TensorFlow Lite 2.16.1\n' +
+            'for Android and will cause a fallback on the CPU. \n' 
+    )
+    parser.add_argument(
         '-fasr',
         '--fused_argmax_scale_ratio',
         type=float,
@@ -2791,6 +2801,7 @@ def main():
         replace_argmax_to_reducemax_and_indices_is_int64=args.replace_argmax_to_reducemax_and_indices_is_int64,
         replace_argmax_to_reducemax_and_indices_is_float32=args.replace_argmax_to_reducemax_and_indices_is_float32,
         replace_argmax_to_reducemax_new=args.replace_argmax_to_reducemax_new,
+        depth_to_space_crd_fix=args.depth_to_space_crd_fix,
         replace_argmax_to_fused_argmax_and_indices_is_int64=args.replace_argmax_to_fused_argmax_and_indices_is_int64,
         replace_argmax_to_fused_argmax_and_indices_is_float32=args.replace_argmax_to_fused_argmax_and_indices_is_float32,
         fused_argmax_scale_ratio=args.fused_argmax_scale_ratio,

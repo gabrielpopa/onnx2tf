@@ -22,6 +22,7 @@ from onnx2tf.utils.common_functions import (
     onnx_tf_tensor_validation,
 )
 from typing import List, Dict, Any
+from onnx2tf.utils.logging import warn
 
 
 @print_node_info
@@ -106,8 +107,9 @@ def make_node(
             width = tf.shape(input_tensor)[2]
         csize = channel // (blocksize**2)
         optimization_for_gpu_delegate: bool = kwargs['optimization_for_gpu_delegate']
+        depth_to_space_crd_fix: bool = kwargs['depth_to_space_crd_fix']
 
-        if not optimization_for_gpu_delegate:
+        if not optimization_for_gpu_delegate and not depth_to_space_crd_fix:
             # Transposing 6D tensors are not supported by the current TensorFlow Lite 2.16.1
             # for Android and will cause a fallback on the CPU.
             # See: https://onnx.ai/onnx/operators/onnx__DepthToSpace.html
@@ -122,6 +124,7 @@ def make_node(
                 name=graph_node.name,
             )
         else:
+            warn("(gp) Applying depth_to_space_crd_fix")
             # Force a split in two 4D transposes.
             # Slower to run (more layers), but at least it runs on the GPU.
             x = tf.reshape(input_tensor, (batch * height * width, csize, blocksize, blocksize))  # Fold BHW
@@ -314,25 +317,33 @@ def make_node(
                             name=graph_node.name,
                         )
                 elif mode == "CRD":
-                    transposed_input = tf.transpose(a=input_tensor, perm=min_abs_err_perm_1)
-                    input_shape = transposed_input.shape
-                    batch, channel = input_shape[0], input_shape[-1]
-                    height, width = input_shape[1], input_shape[2]
-                    csize = channel // (blocksize**2)
-                    reshape_node = tf.reshape(
-                        tensor=transposed_input,
-                        shape=[batch, height, width, csize, blocksize, blocksize]
-                    )
-                    transpose_node = transpose_with_flexing_deterrence(
-                        input_tensor=reshape_node,
-                        perm=[0,1,4,2,5,3],
-                        **kwargs,
-                    )
+                    # (gp)
+                    # transposed_input = tf.transpose(a=input_tensor, perm=min_abs_err_perm_1)
+                    # input_shape = transposed_input.shape
+                    # batch, channel = input_shape[0], input_shape[-1]
+                    # height, width = input_shape[1], input_shape[2]
+                    # csize = channel // (blocksize**2)
+                    # reshape_node = tf.reshape(
+                    #     tensor=transposed_input,
+                    #     shape=[batch, height, width, csize, blocksize, blocksize]
+                    # )
+                    # transpose_node = transpose_with_flexing_deterrence(
+                    #     input_tensor=reshape_node,
+                    #     perm=[0,1,4,2,5,3],
+                    #     **kwargs,
+                    # )
+                    # tf_layers_dict[graph_node_output.name]['tf_node'] = \
+                    #     tf.reshape(
+                    #         tensor=transpose_node,
+                    #         shape=[batch, height * blocksize, width * blocksize, csize],
+                    #         name=graph_node.name,
+                    # )
+                    exit(1)
                     tf_layers_dict[graph_node_output.name]['tf_node'] = \
-                        tf.reshape(
-                            tensor=transpose_node,
-                            shape=[batch, height * blocksize, width * blocksize, csize],
-                            name=graph_node.name,
+                    tf.nn.depth_to_space(
+                        input=tf.transpose(a=input_tensor, perm=min_abs_err_perm_1),
+                        block_size=blocksize,
+                        name=graph_node.name,
                     )
 
     # Post-process transpose

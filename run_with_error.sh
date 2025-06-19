@@ -16,6 +16,7 @@ show_help() {
     echo "  -f FILENAME       Specify the ONNX file to convert."
     echo "  -r FILENAME       Specify the json file for param_replacement_file instructions."
     echo "  -b                Specify batch size 1."
+    echo "  -d                depth_to_space_crd_fix"
     echo "  -i                Export int8 file."
     echo "  -p 1e-4           PRECISION! Slow, but accurate generation"
     echo "  -e erf_winitzki   Replase with pseudo operations"
@@ -32,14 +33,18 @@ export_int=""
 split_at=""
 precision=""
 pseudo=""
+depth_to_space_crd_fix=""
 
-while getopts "e:f:p:r:s:bi" opts; do         
+while getopts "e:f:p:r:s:bid" opts; do         
   case "${opts}" in                    # 
     r)         
       repl=${OPTARG}
       ;;
     b)         
       batch="-b 1"
+      ;;
+    d)         
+      depth_to_space_crd_fix="--depth_to_space_crd_fix"
       ;;
     i)         
       export_int="-ei"
@@ -137,6 +142,10 @@ if [ -n "$export_int" ]; then
     PARMS+=("-ei")
 fi
 
+if [ -n "$depth_to_space_crd_fix" ]; then
+    PARMS+=("$depth_to_space_crd_fix")
+fi
+
 if [ -n "$precision" ]; then
     PARMS+=("-cotof" "-cotoa" $precision)
 else
@@ -150,7 +159,7 @@ fi
 echo "Converting $name: ${GREEN}$onnx_file${N} to tflite with replacement file ${GREEN}$json_file${N}."
 echo "PARMS are: ${PARMS[@]}${N}."
 
-command="python3 onnx2tf/onnx2tf.py ${PARMS[@]}"
+command="python3 -m cProfile -o profile.pstats onnx2tf/onnx2tf.py ${PARMS[@]}"
 layer=0
 perm_counter=0
 current_perm=${perm_possible[$perm_counter]}

@@ -17,10 +17,13 @@ show_help() {
     echo "  -r FILENAME       Specify the json file for param_replacement_file instructions."
     echo "  -b                Specify batch size 1."
     echo "  -d                depth_to_space_crd_fix"
-    echo "  -i                Export int8 file."
     echo "  -p 1e-4           PRECISION! Slow, but accurate generation"
     echo "  -e erf_winitzki   Replase with pseudo operations"
     echo "  -s output name    Split model at output name."
+    echo "  -a                  -eatfp16"
+    echo "  -i                Export int8 file."
+    echo "  -q                Export Integer Quantazied (--output_integer_quantized_tflite)"
+    echo "  -y                Export Dynamic range Quantazied (--output_dynamic_range_quantized_tflite)"
     echo ""
     echo "Example:"
     echo "  $0 -f path_to_file.onnx"
@@ -34,14 +37,34 @@ split_at=""
 precision=""
 pseudo=""
 depth_to_space_crd_fix=""
+f16=""
+int_quant=""
+dyn_quant=""
+custom_param=""
+custom_value=""
 
-while getopts "e:f:p:r:s:bid" opts; do         
+while getopts "c:v:e:f:p:r:s:bidaqy" opts; do         
   case "${opts}" in                    # 
+    c)
+      custom_param=${OPTARG}
+      ;;
+    v)
+      custom_value=${OPTARG}
+      ;;
+    q)         
+      int_quant="--output_integer_quantized_tflite"
+      ;;
+    y)         
+      dyn_quant="--output_dynamic_range_quantized_tflite"
+      ;;
     r)         
       repl=${OPTARG}
       ;;
     b)         
       batch="-b 1"
+      ;;
+    a)         
+      f16="-eatfp16"
       ;;
     d)         
       depth_to_space_crd_fix="--depth_to_space_crd_fix"
@@ -134,8 +157,28 @@ if [ -n "$split_at" ]; then
     PARMS+=("-onimc" "${split_at}")
 fi
 
+if [ -n "$custom_param" ]; then
+    PARMS+=("$custom_param" "$custom_value")
+fi
+
+if [ -n "$dyn_quant" ]; then
+    PARMS+=("$dyn_quant")
+fi
+
+if [ -n "$int_quant" ]; then
+    PARMS+=("$int_quant")
+fi
+
 if [ -n "$batch" ]; then
     PARMS+=("-b" "1")
+fi
+
+if [ -n "$batch" ]; then
+    PARMS+=("-b" "1")
+fi
+
+if [ -n "$f16" ]; then
+    PARMS+=("-eatfp16")
 fi
 
 if [ -n "$export_int" ]; then
@@ -143,7 +186,7 @@ if [ -n "$export_int" ]; then
 fi
 
 if [ -n "$depth_to_space_crd_fix" ]; then
-    PARMS+=("$depth_to_space_crd_fix")
+    PARMS+=("--depth_to_space_crd_fix")
 fi
 
 if [ -n "$precision" ]; then
@@ -159,7 +202,12 @@ fi
 echo "Converting $name: ${GREEN}$onnx_file${N} to tflite with replacement file ${GREEN}$json_file${N}."
 echo "PARMS are: ${PARMS[@]}${N}."
 
-command="python3 -m cProfile -o profile.pstats onnx2tf/onnx2tf.py ${PARMS[@]}"
+if [ -n "$int_quant" ] || [ -n "$dyn_quant" ]; then
+    command="python3 -m cProfile -o profile.pstats onnx2tf/onnx2tf.py --output_h5 ${PARMS[@]}"
+else
+    command="python3 -m cProfile -o profile.pstats onnx2tf/onnx2tf.py ${PARMS[@]}"
+fi
+
 layer=0
 perm_counter=0
 current_perm=${perm_possible[$perm_counter]}

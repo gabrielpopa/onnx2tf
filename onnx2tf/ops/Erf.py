@@ -13,7 +13,27 @@ from onnx2tf.utils.common_functions import (
     pre_process_transpose,
     post_process_transpose,
 )
+from onnx2tf.utils.logging import *
 
+
+def erf_approx_winitzki(x, a=0.147):
+    """
+    Winitzki-style approximation:
+        erf(x) ~ sign(x) * sqrt(1 - exp(-x^2*(4/pi + a*x^2)/(1 + a*x^2)))
+    """
+    x = tf.convert_to_tensor(x, dtype=tf.float32)
+    sign_x = tf.sign(x)
+    x_abs = tf.abs(x)
+    
+    pi_ = tf.constant(np.pi, dtype=x.dtype)
+
+    numerator = (4.0 / pi_) + a * (x_abs**2)
+    denominator = 1.0 + a * (x_abs**2)
+    
+    arg = - (x_abs**2) * (numerator / denominator)
+    
+    inner = tf.exp(arg)
+    return sign_x * tf.sqrt(1.0 - inner)
 
 @print_node_info
 @inverted_operation_enable_disable
@@ -58,7 +78,11 @@ def make_node(
                 and 'nhwc' in tf_layers_dict[graph_node_input.name].keys() else False
     }
 
+    replace_argmax_to_reducemax_new = \
+            kwargs['replace_argmax_to_reducemax_new']
+
     replace_erf_to_pseudo_erf = "erf" in kwargs['replace_to_pseudo_operators']
+    replace_erf_to_pseudo_erf_winitzki = "erf_winitzki" in kwargs['replace_to_pseudo_operators']
     gelu_replace_op_names: dict = kwargs['gelu_replace_op_names']
 
     # Generation of TF OP
@@ -85,27 +109,52 @@ def make_node(
     enable_gelu = graph_node.name in gelu_op_names
 
     if not enable_gelu:
-        if not replace_erf_to_pseudo_erf:
-            tf_layers_dict[graph_node_output.name]['tf_node'] = \
-                tf.math.erf(
+        if replace_erf_to_pseudo_erf:
+            warn("(gp) Pseudo Erf - Abramowitz")
+            # https://stackoverflow.com/questions/457408/is-there-an-easily-available-implementation-of-erf-for-python
+            x_abs = tf.math.abs(input_tensor)
+            sign = tf.sign(input_tensor)
+
+            a1 = tf.constant(0.254829592, dtype=input_tensor.dtype)
+            a2 = tf.constant(-0.284496736, dtype=input_tensor.dtype)
+            a3 = tf.constant(1.421413741, dtype=input_tensor.dtype)
+            a4 = tf.constant(-1.453152027, dtype=input_tensor.dtype)
+            a5 = tf.constant(1.061405429, dtype=input_tensor.dtype)
+            p  = tf.constant(0.3275911, dtype=input_tensor.dtype)
+            t = tf.math.divide(1.0, tf.math.add(1.0, tf.math.multiply(p, x_abs)))
+            y = tf.math.subtract(
+                1.0, 
+                tf.math.multiply(
+                    (((((tf.math.multiply(a5, t) + a4) * t) + a3) * t) + a2) * t + a1,
+                    t
+                ) * tf.math.exp(-tf.math.multiply(x_abs, x_abs))
+            )
+            erf_tensor = tf.math.multiply(sign, y)
+
+            # (gp) Coefficients for the Abramowitz and Stegun approximation
+            # t = tf.math.divide(1.0, (1.0 + 0.5 * x_abs))
+            # y = 1.0 - t * tf.math.exp(-x_abs*x_abs - 1.26551223 + 
+            #         t * (1.00002368 + 
+            #         t * (0.37409196 + 
+            #         t * (0.09678418 + 
+            #         t * (-0.18628806 + 
+            #         t * (0.27886807 + 
+            #         t * (-1.13520398 + 
+            #         t * (1.48851587 + 
+            #         t * (-0.82215223 + 
+            #         t * 0.17087277)))))))))
+            # erf_tensor = sign * y
+
+        elif replace_erf_to_pseudo_erf_winitzki:
+            warn("(gp) Pseudo Erf - Winitzki")
+            erf_tensor = erf_approx_winitzki(input_tensor)
+        else:
+            erf_tensor = tf.math.erf(
                     x=input_tensor,
                     name=graph_node.name,
                 )
-        else:
-            # https://stackoverflow.com/questions/457408/is-there-an-easily-available-implementation-of-erf-for-python
-            eps = 1e-11
-            x_abs = tf.math.abs(input_tensor)
-            sign = tf.math.divide(input_tensor, tf.math.abs(input_tensor)+eps)
-            a1 =  0.254829592
-            a2 = -0.284496736
-            a3 =  1.421413741
-            a4 = -1.453152027
-            a5 =  1.061405429
-            p  =  0.3275911
-            t = 1.0/(1.0 + p*x_abs)
-            y = 1.0 - (((((a5*t + a4)*t) + a3)*t + a2)*t + a1)*t*tf.math.exp(-x_abs*x_abs)
-            erf_tensor = sign*y
-            tf_layers_dict[graph_node_output.name]['tf_node'] = erf_tensor
+
+        tf_layers_dict[graph_node_output.name]['tf_node'] = erf_tensor
         tf_type = tf.math.erf
     else:
         tf_layers_dict[graph_node_output.name]['tf_node'] = \

@@ -265,12 +265,20 @@ Video speed is adjusted approximately 50 times slower than actual speed.
 - psutil==5.9.5
 - ml_dtypes==0.3.2
 - flatbuffers-compiler (Optional, Only when using the `-coion` option. Executable file named `flatc`.)
-- flatbuffers>=23.5.26
+- flatbuffers>=23.1.21
   ```bash
-  # Custom flatc v23.5.26 binary for Ubuntu 20.04+
+  # Custom flatc binary for Ubuntu 22.04+
   # https://github.com/PINTO0309/onnx2tf/issues/196
+
+  # x86_64/amd64 v23.5.26
   wget https://github.com/PINTO0309/onnx2tf/releases/download/1.16.31/flatc.tar.gz \
   && tar -zxvf flatc.tar.gz \
+  && sudo chmod +x flatc \
+  && sudo mv flatc /usr/bin/
+
+  # arm64 v23.1.21
+  wget https://github.com/PINTO0309/onnx2tf/releases/download/1.26.6/flatc_arm64.tar.gz \
+  && tar -zxvf flatc_arm64.tar.gz \
   && sudo chmod +x flatc \
   && sudo mv flatc /usr/bin/
   ```
@@ -299,7 +307,7 @@ Video speed is adjusted approximately 50 times slower than actual speed.
   docker run --rm -it \
   -v `pwd`:/workdir \
   -w /workdir \
-  ghcr.io/pinto0309/onnx2tf:1.25.14
+  ghcr.io/pinto0309/onnx2tf:1.26.8
 
   or
 
@@ -307,7 +315,7 @@ Video speed is adjusted approximately 50 times slower than actual speed.
   docker run --rm -it \
   -v `pwd`:/workdir \
   -w /workdir \
-  docker.io/pinto0309/onnx2tf:1.25.14
+  docker.io/pinto0309/onnx2tf:1.26.8
 
   or
 
@@ -375,7 +383,9 @@ Only patterns that are considered to be used particularly frequently are describ
 # Improved to automatically generate `signature` without `-osd` starting from v1.25.3.
 # Also, starting from v1.24.0, efficient TFLite can be generated
 # without unrolling `GroupConvolution`. e.g. YOLOv9, YOLOvN
+
 # Conversion to other frameworks. e.g. TensorFlow.js, CoreML, etc
+
 # https://github.com/PINTO0309/onnx2tf#19-conversion-to-tensorflowjs
 # https://github.com/PINTO0309/onnx2tf#20-conversion-to-coreml
 wget https://github.com/PINTO0309/onnx2tf/releases/download/0.0.2/resnet18-v1-7.onnx
@@ -1396,6 +1406,7 @@ onnx2tf -i model.onnx -b 1 -osd
 
   ![image](https://github.com/PINTO0309/onnx2tf/assets/33194443/ccad4eaa-ce1d-46aa-80e9-9720467a3afb)
 
+
 Click here to see how to perform inference using the dynamic shape tensor.
 
 https://github.com/PINTO0309/onnx2tf/tree/main?tab=readme-ov-file#14-inference-with-dynamic-tensors-in-tflite
@@ -1448,9 +1459,13 @@ For example, take a model with multiple inputs and multiple outputs as shown in 
 When converting to TensorFlow.js, process as follows.
 
 ```bash
-pip install tensorflowjs
+pip install -U --no-deps \
+tensorflowjs \
+tensorflow_decision_forests \
+ydf \
+tensorflow_hub
 
-onnx2tf -i mobilenetv2-12.onnx -ois input:1,3,224,224 -osd
+onnx2tf -i mobilenetv2-12.onnx -ois input:1,3,224,224 -osd -dgc
 
 tensorflowjs_converter \
 --input_format tf_saved_model \
@@ -1514,13 +1529,15 @@ usage: onnx2tf
 [-oiqt]
 [-qt {per-channel,per-tensor}]
 [-cind INPUT_NAME NUMPY_FILE_PATH MEAN STD]
-[-ioqd {int8,uint8}]
+[-iqd {int8,uint8,float32}]
+[-oqd {int8,uint8,float32}]
 [-nuo]
 [-nuonag]
 [-b BATCH_SIZE]
 [-ois OVERWRITE_INPUT_SHAPE [OVERWRITE_INPUT_SHAPE ...]]
 [-nlt]
 [-onwdt]
+[-snms {v4,v5}]
 [-k KEEP_NCW_OR_NCHW_OR_NCDHW_INPUT_NAMES [KEEP_NCW_OR_NCHW_OR_NCDHW_INPUT_NAMES ...]]
 [-kt KEEP_NWC_OR_NHWC_OR_NDHWC_INPUT_NAMES [KEEP_NWC_OR_NHWC_OR_NDHWC_INPUT_NAMES ...]]
 [-kat KEEP_SHAPE_ABSOLUTELY_INPUT_NAMES [KEEP_SHAPE_ABSOLUTELY_INPUT_NAMES ...]]
@@ -1671,9 +1688,13 @@ optional arguments:
       and {input_op_name}, {numpy_file_path}, {mean}, and {std} must all be entered.
       Otherwise, an error will occur during the -oiqt stage.
 
-  -ioqd {int8,uint8}, --input_output_quant_dtype {int8,uint8}
-    Input and Output dtypes when doing Full INT8 Quantization.
-    "int8"(default) or "uint8"
+  -iqd {int8,uint8,float32}, --input_quant_dtype {int8,uint8,float32}
+    Input dtypes when doing Full INT8 Quantization.
+    "int8"(default) or "uint8" or "float32"
+
+  -oqd {int8,uint8,float32}, --output_quant_dtype {int8,uint8,float32}
+    Output dtypes when doing Full INT8 Quantization.
+    "int8"(default) or "uint8" or "float32"
 
   -nuo, --not_use_onnxsim
     No optimization by onnx-simplifier is performed.
@@ -1715,6 +1736,12 @@ optional arguments:
         output_tensor_shape: [100, 7]
     enable --output_nms_with_dynamic_tensor:
         output_tensor_shape: [N, 7]
+
+  -snms {v4,v5}, --switch_nms_version {v4,v5}
+    Switch the NMS version to V4 or V5 to convert.
+    e.g.
+    NonMaxSuppressionV4(default): --switch_nms_version v4
+    NonMaxSuppressionV5: --switch_nms_version v5
 
   -k KEEP_NCW_OR_NCHW_OR_NCDHW_INPUT_NAMES [KEEP_NCW_OR_NCHW_OR_NCDHW_INPUT_NAMES ...], \
       --keep_ncw_or_nchw_or_ncdhw_input_names KEEP_NCW_OR_NCHW_OR_NCDHW_INPUT_NAMES \
@@ -1993,13 +2020,15 @@ convert(
   output_integer_quantized_tflite: Optional[bool] = False,
   quant_type: Optional[str] = 'per-channel',
   custom_input_op_name_np_data_path: Optional[List] = None,
-  input_output_quant_dtype: Optional[str] = 'int8',
+  input_quant_dtype: Optional[str] = 'int8',
+  output_quant_dtype: Optional[str] = 'int8',
   not_use_onnxsim: Optional[bool] = False,
   not_use_opname_auto_generate: Optional[bool] = False,
   batch_size: Union[int, NoneType] = None,
   overwrite_input_shape: Union[List[str], NoneType] = None,
   no_large_tensor: Optional[bool] = False,
   output_nms_with_dynamic_tensor: Optional[bool] = False,
+  switch_nms_version: Optional[str] = 'v4',
   keep_ncw_or_nchw_or_ncdhw_input_names: Union[List[str], NoneType] = None,
   keep_nwc_or_nhwc_or_ndhwc_input_names: Union[List[str], NoneType] = None,
   keep_shape_absolutely_input_names: Optional[List[str]] = None,
@@ -2157,9 +2186,13 @@ convert(
         and {input_op_name}, {numpy_file_path}, {mean}, and {std} must all be entered.
         Otherwise, an error will occur during the -oiqt stage.
 
-    input_output_quant_dtype: Optional[str]
-      Input and Output dtypes when doing Full INT8 Quantization.
-      "int8"(default) or "uint8"
+    input_quant_dtype: Optional[str]
+      Input dtypes when doing Full INT8 Quantization.
+      "int8"(default) or "uint8" or "float32"
+
+    output_quant_dtype: Optional[str]
+      Output dtypes when doing Full INT8 Quantization.
+      "int8"(default) or "uint8" or "float32"
 
     not_use_onnxsim: Optional[bool]
       No optimization by onnx-simplifier is performed.
@@ -2200,6 +2233,12 @@ convert(
           output_tensor_shape: [100, 7]
       enable --output_nms_with_dynamic_tensor:
           output_tensor_shape: [N, 7]
+
+    switch_nms_version {v4,v5}
+      Switch the NMS version to V4 or V5 to convert.
+      e.g.
+      NonMaxSuppressionV4(default): switch_nms_version="v4"
+      NonMaxSuppressionV5: switch_nms_version="v5"
 
     keep_ncw_or_nchw_or_ncdhw_input_names: Optional[List[str]]
       Holds the NCW or NCHW or NCDHW of the input shape for the specified INPUT OP names.
@@ -2585,7 +2624,7 @@ Do not submit an issue that only contains an amount of information that cannot b
   |14|Unsqueeze|1. "param_target": "inputs"<br>`pre_process_transpose_perm`: Transpose is applied to the tensor before the Unsqueeze operation with the perm specified as pre-processing.<br>2. "param_target": "outputs"<br>`post_process_transpose_perm`: Transpose is applied to the tensor after the Unsqueeze operation with the perm specified as post-processing.<br>3. "param_target": "op"<br>`new_shape`: Specifies directly the shape after Unsqueeze processing.<br>{<br>&nbsp;&nbsp;"op_name": "/backbone/backbone.1/Unsqueeze_1",<br>&nbsp;&nbsp;"param_target": "op",<br>&nbsp;&nbsp;"new_shape": [1,15,15,1]<br>}|
   |15|Reshape|1. "param_target": "inputs"<br>`values`: Value of `shape`<br>`pre_process_transpose_perm`: Transpose is applied to the tensor before the Reshape operation with the perm specified as pre-processing.<br>2. "param_target": "outputs"<br>`post_process_transpose_perm`: Transpose is applied to the tensor after the Reshape operation with the perm specified as post-processing.|
   |16|Resize|1. "param_target": "attributes"<br>`coordinate_transformation_mode`: Value of `coordinate_transformation_mode`<br>`extrapolation_value`: Value of `extrapolation_value`<br>`mode`: Value of `mode`<br>2. "param_target": "inputs"<br>`values`: Value of `roi` or `scales` or `sizes`. `scales`=`[scale_h,scale_w]`,`sizes`=`[h,w]`<br>`pre_process_transpose_perm`: Transpose is applied to the tensor before the Resize operation with the perm specified as pre-processing.<br>3. "param_target": "outputs"<br>`post_process_transpose_perm`: Transpose is applied to the tensor after the Resize operation with the perm specified as post-processing.|
-  |17|Slice|`Slice` implements special replacements separately ignore all automatic conversions and generate `tf.strided_slice` directly by specifying all parameters of `tf.strided_slice` directly.<br>https://www.tensorflow.org/api_docs/python/tf/strided_slice<br>See [replace_slice.json](https://github.com/PINTO0309/onnx2tf/blob/main/replace_slice.json) for a sample description.<br>![20221221222956](https://user-images.githubusercontent.com/33194443/208916732-9987a69a-83a7-4a29-8b77-d97b1812d59c.png)<br>1. "param_target": "op"<br>`begin`: Value of `begin`<br>`end`: Value of `end`<br>`strides`: Value of `strides`<br>`begin_mask`: Value of `begin_mask`<br>`end_mask`: Value of `end_mask`<br>`ellipsis_mask`: Value of `ellipsis_mask`<br>`new_axis_mask`: Value of `new_axis_mask`<br>`shrink_axis_mask`: Value of `shrink_axis_mask`<br>{<br>&nbsp;&nbsp;"op_name": "/Slice",<br>&nbsp;&nbsp;"param_target": "op",<br>&nbsp;&nbsp;"begin": [0,0,1,0],<br>&nbsp;&nbsp;"end": [0,0,0,0],<br>&nbsp;&nbsp;"end_mask": 15<br>}|
+  |17|Slice|`Slice` implements special replacements separately ignore all automatic conversions and generate `tf.strided_slice` directly by specifying all parameters of `tf.strided_slice` directly.<br>https://www.tensorflow.org/api_docs/python/tf/strided_slice<br>See [json_samples/replace_slice.json](https://github.com/PINTO0309/onnx2tf/blob/main/json_samples/replace_slice.json) for a sample description.<br>![20221221222956](https://user-images.githubusercontent.com/33194443/208916732-9987a69a-83a7-4a29-8b77-d97b1812d59c.png)<br>1. "param_target": "op"<br>`begin`: Value of `begin`<br>`end`: Value of `end`<br>`strides`: Value of `strides`<br>`begin_mask`: Value of `begin_mask`<br>`end_mask`: Value of `end_mask`<br>`ellipsis_mask`: Value of `ellipsis_mask`<br>`new_axis_mask`: Value of `new_axis_mask`<br>`shrink_axis_mask`: Value of `shrink_axis_mask`<br>{<br>&nbsp;&nbsp;"op_name": "/Slice",<br>&nbsp;&nbsp;"param_target": "op",<br>&nbsp;&nbsp;"begin": [0,0,1,0],<br>&nbsp;&nbsp;"end": [0,0,0,0],<br>&nbsp;&nbsp;"end_mask": 15<br>}|
   |18|Softmax|1. "param_target": "attributes"<br>`axis`: Value of `axis`. The transpositions corresponding to the specified axis are extrapolated before and after `Softmax`.<br>2. "param_target": "inputs"<br>`values`: Value of `tensor`|
   |19|Split|1. "param_target": "inputs"<br>`values`: Value of `split`<br>2. "param_target": "attributes"<br>`axis`: Value of `axis`.<br>`num_outputs`: Value of `num_outputs`.|
   |20|Sub|1. "param_target": "inputs"<br>`values`: Value of `input`<br>`pre_process_transpose_perm`: Transpose is applied to the tensor before the Sub operation with the perm specified as pre-processing.<br>2. "param_target": "outputs"<br>`post_process_transpose_perm`: Transpose is applied to the tensor after the Sub operation with the perm specified as post-processing.|

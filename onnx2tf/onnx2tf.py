@@ -101,13 +101,15 @@ def convert(
     output_integer_quantized_tflite: Optional[bool] = False,
     quant_type: Optional[str] = 'per-channel',
     custom_input_op_name_np_data_path: Optional[List] = None,
-    input_output_quant_dtype: Optional[str] = 'int8',
+    input_quant_dtype: Optional[str] = 'int8',
+    output_quant_dtype: Optional[str] = 'int8',
     not_use_onnxsim: Optional[bool] = False,
     not_use_opname_auto_generate: Optional[bool] = False,
     batch_size: Optional[int] = None,
     overwrite_input_shape: Optional[List[str]] = None,
     no_large_tensor: Optional[bool] = False,
     output_nms_with_dynamic_tensor: Optional[bool] = False,
+    switch_nms_version: Optional[str] = 'v4',
     keep_ncw_or_nchw_or_ncdhw_input_names: Optional[List[str]] = None,
     keep_nwc_or_nhwc_or_ndhwc_input_names: Optional[List[str]] = None,
     keep_shape_absolutely_input_names: Optional[List[str]] = None,
@@ -252,9 +254,13 @@ def convert(
             ["input2","input2.npy",[0.3],[0.07]],\n
         ]
 
-    input_output_quant_dtype: Optional[str]
-        Input and Output dtypes when doing Full INT8 Quantization.\n
-        "int8"(default) or "uint8"
+    input_quant_dtype: Optional[str]
+        Input dtypes when doing Full INT8 Quantization.\n
+        "int8"(default) or "uint8" or "float32"
+
+    output_quant_dtype: Optional[str]
+        Output dtypes when doing Full INT8 Quantization.\n
+        "int8"(default) or "uint8" or "float32"
 
     not_use_onnxsim: Optional[bool]
         No optimization by onnx-simplifier is performed.\n
@@ -295,6 +301,12 @@ def convert(
             output_tensor_shape: [100, 7]\n
         enable --output_nms_with_dynamic_tensor:\n
             output_tensor_shape: [N, 7]
+
+    switch_nms_version: Optional[str]
+        Switch the NMS version to V4 or V5 to convert.\n\n
+        e.g.\n
+        NonMaxSuppressionV4(default): --switch_nms_version v4\n
+        NonMaxSuppressionV5: --switch_nms_version v5
 
     keep_ncw_or_nchw_or_ncdhw_input_names: Optional[List[str]]
         Holds the NCW or NCHW or NCDHW of the input shape for the specified INPUT OP names.\n
@@ -950,6 +962,7 @@ def convert(
         'mvn_epsilon': mvn_epsilon,
         'output_signaturedefs': output_signaturedefs,
         'output_nms_with_dynamic_tensor': output_nms_with_dynamic_tensor,
+        'switch_nms_version': switch_nms_version,
         'output_integer_quantized_tflite': output_integer_quantized_tflite,
         'gelu_replace_op_names': {},
         'space_to_depth_replace_op_names': {},
@@ -1331,6 +1344,9 @@ def convert(
             input_signature=[tf.TensorSpec(tensor.shape, tensor.dtype, tensor.name) for tensor in model.inputs],
         )
 
+        concrete_func = run_model.get_concrete_function()
+        info(Color.GREEN(f'Create concrete func!'))
+
         info(Color.GREEN(f'Create concrete func!'))
         concrete_func = run_model.get_concrete_function()
 
@@ -1344,13 +1360,9 @@ def convert(
             if not output_signaturedefs and not output_integer_quantized_tflite:
                 tf.saved_model.save(model, output_folder_path)
             else:
-                export_archive = tf_keras.export.ExportArchive()
-                export_archive.add_endpoint(
-                    name=SIGNATURE_KEY,
-                    fn=lambda *inputs : model(inputs),
-                    input_signature=[tf.TensorSpec(tensor.shape, tensor.dtype, tensor.name) for tensor in model.inputs],
-                )
-                export_archive.write_out(output_folder_path)
+                tf.saved_model.save(model, output_folder_path)
+                # tf.saved_model.save(concrete_func, output_folder_path, save_format='h5')
+
             info(Color.GREEN(f'saved_model output complete!'))
         except TypeError as e:
             raise e
@@ -1705,6 +1717,7 @@ def convert(
                             mean,
                             std,
                         ]
+
             elif custom_input_op_name_np_data_path is not None:
                 for param in custom_input_op_name_np_data_path:
                     if len(param) != 4:
@@ -1731,11 +1744,14 @@ def convert(
 
             # representative_dataset_gen
             def representative_dataset_gen():
-                for idx in range(data_count):
+                batch_size = model.inputs[0].shape[0]
+                if not isinstance(batch_size, int):
+                    batch_size = 1
+                for idx in range(0, data_count, batch_size):
                     yield_data_dict = {}
                     for model_input_name in model_input_name_list:
                         calib_data, mean, std = calib_data_dict[model_input_name]
-                        normalized_calib_data: np.ndarray = (calib_data[idx] - mean) / std
+                        normalized_calib_data: np.ndarray = (calib_data[idx:idx+batch_size] - mean) / std
                         yield_data_dict[model_input_name] = tf.cast(tf.convert_to_tensor(normalized_calib_data), tf.float32)
                     yield yield_data_dict
 
@@ -1777,15 +1793,27 @@ def convert(
                 converter._experimental_disable_per_channel = disable_per_channel
                 converter.unfold_batchmatmul = enable_batchmatmul_unfold
                 converter.representative_dataset = representative_dataset_gen
-                inf_type = None
-                if input_output_quant_dtype == 'int8':
-                    inf_type = tf.int8
-                elif input_output_quant_dtype == 'uint8':
-                    inf_type = tf.uint8
+                inf_type_input = None
+                inf_type_output = None
+                if input_quant_dtype == 'int8':
+                    inf_type_input = tf.int8
+                elif input_quant_dtype == 'uint8':
+                    inf_type_input = tf.uint8
+                elif input_quant_dtype == 'float32':
+                    inf_type_input = tf.float32
                 else:
-                    inf_type = tf.int8
-                converter.inference_input_type = inf_type
-                converter.inference_output_type = inf_type
+                    inf_type_input = tf.int8
+
+                if output_quant_dtype == 'int8':
+                    inf_type_output = tf.int8
+                elif output_quant_dtype == 'uint8':
+                    inf_type_output = tf.uint8
+                elif output_quant_dtype == 'float32':
+                    inf_type_output = tf.float32
+                else:
+                    inf_type_output = tf.int8
+                converter.inference_input_type = inf_type_input
+                converter.inference_output_type = inf_type_output
                 tflite_model = converter.convert()
                 with open(f'{output_folder_path}/{output_file_name}_full_integer_quant.tflite', 'wb') as w:
                     w.write(tflite_model)
@@ -2212,14 +2240,24 @@ def main():
             'Otherwise, an error will occur during the -oiqt stage.'
     )
     parser.add_argument(
-        '-ioqd',
-        '--input_output_quant_dtype',
+        '-iqd',
+        '--input_quant_dtype',
         type=str,
-        choices=['int8', 'uint8'],
+        choices=['int8', 'uint8', 'float32'],
         default='int8',
         help=\
-            'Input and Output dtypes when doing Full INT8 Quantization. \n' +
-            '"int8"(default) or "uint8"'
+            'Input dtypes when doing Full INT8 Quantization. \n' +
+            '"int8"(default) or "uint8" or "float32"'
+    )
+    parser.add_argument(
+        '-oqd',
+        '--output_quant_dtype',
+        type=str,
+        choices=['int8', 'uint8', 'float32'],
+        default='int8',
+        help=\
+            'Output dtypes when doing Full INT8 Quantization. \n' +
+            '"int8"(default) or "uint8" or "float32"'
     )
     parser.add_argument(
         '-nuo',
@@ -2285,6 +2323,18 @@ def main():
             '    output_tensor_shape: [100, 7] \n' +
             'enable --output_nms_with_dynamic_tensor: \n' +
             '    output_tensor_shape: [N, 7]'
+    )
+    parser.add_argument(
+        '-snms',
+        '--switch_nms_version',
+        type=str,
+        choices=['v4', 'v5'],
+        default='v4',
+        help=\
+            'Switch the NMS version to V4 or V5 to convert. \n' +
+            'e.g. \n' +
+            'NonMaxSuppressionV4(default): --switch_nms_version v4 \n' +
+            'NonMaxSuppressionV5: --switch_nms_version v5'
     )
     parser.add_argument(
         '-k',
@@ -2685,13 +2735,15 @@ def main():
         output_integer_quantized_tflite=args.output_integer_quantized_tflite,
         quant_type=args.quant_type,
         custom_input_op_name_np_data_path=custom_params,
-        input_output_quant_dtype=args.input_output_quant_dtype,
+        input_quant_dtype=args.input_quant_dtype,
+        output_quant_dtype=args.output_quant_dtype,
         not_use_onnxsim=args.not_use_onnxsim,
         not_use_opname_auto_generate=args.not_use_opname_auto_generate,
         batch_size=args.batch_size,
         overwrite_input_shape=args.overwrite_input_shape,
         no_large_tensor=args.no_large_tensor,
         output_nms_with_dynamic_tensor=args.output_nms_with_dynamic_tensor,
+        switch_nms_version=args.switch_nms_version,
         keep_ncw_or_nchw_or_ncdhw_input_names=args.keep_ncw_or_nchw_or_ncdhw_input_names,
         keep_nwc_or_nhwc_or_ndhwc_input_names=args.keep_nwc_or_nhwc_or_ndhwc_input_names,
         keep_shape_absolutely_input_names=args.keep_shape_absolutely_input_names,

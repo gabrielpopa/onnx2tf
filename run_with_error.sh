@@ -42,14 +42,18 @@ int_quant=""
 dyn_quant=""
 custom_param=""
 custom_value=""
+gpu_opt=""
 
-while getopts "c:v:e:f:p:r:s:bidaqy" opts; do         
+while getopts "c:v:e:f:p:r:s:bidaqyg" opts; do         
   case "${opts}" in                    # 
     c)
       custom_param=${OPTARG}
       ;;
     v)
       custom_value=${OPTARG}
+      ;;
+    g)
+      gpu_opt="--optimization_for_gpu_delegate"
       ;;
     q)         
       int_quant="--output_integer_quantized_tflite"
@@ -109,7 +113,6 @@ while getopts "c:v:e:f:p:r:s:bidaqy" opts; do
   esac
 done
 
-json_file="${onnx_file%.onnx}_generated.json"
 output_file="${onnx_file%.onnx}_output.txt"
 
 # if [ "$#" -eq 1 ]; then
@@ -150,7 +153,7 @@ if [ ! -f "$json_file" ]; then
     echo "Created $json_file with initial content."
 fi
 
-PARMS=("-i" "${onnx_file}" "--param_replacement_file" "${json_file}" "--replace_argmax_to_reducemax_new" "--optimization_for_gpu_delegate" "--not_use_opname_auto_generate" "--disable_group_convolution" "-v debug")
+PARMS=("-i" "${onnx_file}" "--param_replacement_file" "${json_file}" "--not_use_onnxsim" "--not_use_opname_auto_generate" "--disable_group_convolution" "-v debug")
 
 if [ -n "$split_at" ]; then
     echo "Split model at: ${GREEN}$split_at${N}"
@@ -169,8 +172,8 @@ if [ -n "$int_quant" ]; then
     PARMS+=("$int_quant")
 fi
 
-if [ -n "$batch" ]; then
-    PARMS+=("-b" "1")
+if [ -n "$gpu_opt" ]; then
+    PARMS+=("$gpu_opt")
 fi
 
 if [ -n "$batch" ]; then
@@ -192,7 +195,7 @@ fi
 if [ -n "$precision" ]; then
     PARMS+=("-cotof" "-cotoa" $precision)
 else
-    PARMS+=("--disable_strict_mode" "-cotof" "-cotoa" "1e-4")
+    PARMS+=("--disable_strict_mode")
 fi
 
 if [ -n "$pseudo" ]; then

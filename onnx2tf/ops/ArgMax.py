@@ -148,6 +148,7 @@ def make_node(
         )
         tf_op_type = 'alternative_argmax'
     elif replace_argmax_to_reducemax_new:
+        warn("(gp) Applying ConvTranspose for GPU fix")
         final_tensor = alternative_argmax_new(
             input_tensor=reversed_tensor,
             axis=axis,

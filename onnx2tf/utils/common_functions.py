@@ -1333,11 +1333,11 @@ def alternative_argmax_new(
     axis_max = tf.reduce_max(input_tensor, axis=axis, keepdims=True)
     
     # make a mask for max values
-    mask = tf.cast(tf.equal(input_tensor, axis_max), input_tensor.dtype)
+    mask = tf.cast(tf.equal(input_tensor, axis_max), tf.float32)
     
     # get dimensions and generate indices
     dim_size = tf.shape(input_tensor)[axis]
-    indices = tf.range(dim_size, dtype=input_tensor.dtype)
+    indices = tf.range(dim_size, dtype=tf.float32)
 
     # Expand indices to match input tensor's shape
     shape_to_expand = [1] * len(input_tensor.shape)
@@ -1345,7 +1345,7 @@ def alternative_argmax_new(
     indices = tf.reshape(indices, shape_to_expand)
 
     # broadcast indices across the input tensor
-    expanded_indices = indices + tf.zeros_like(input_tensor, dtype=input_tensor.dtype)
+    expanded_indices = indices + tf.zeros_like(input_tensor, dtype=tf.float32)
 
     # mask out the max indices
     max_indices = expanded_indices * mask

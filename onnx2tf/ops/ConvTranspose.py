@@ -270,11 +270,10 @@ def make_node(
                     'Concat': 'linear',
                 }
 
-                activation_function = activation_mapping.get(optype, None)
+                act = activation_mapping.get(optype, None)
                 # act = tf_keras.layers.ReLU(max_value=None, negative_slope=0.99999, threshold=0.0)
                 # act = tf_keras.layers.LeakyReLU(alpha=0.99999, name=graph_node.name)
                 act = tf.keras.layers.PReLU(alpha_initializer=tf.keras.initializers.Constant(value=1.00), shared_axes=[1, 2], name=graph_node.name) if spatial_size == 2 else tf.keras.layers.PReLU(shared_axes=[1, 2, 3], name=graph_node.name)
-
                 
                 conv_layer = conv_layer(
                             filters=num_filters,
@@ -287,21 +286,35 @@ def make_node(
                             use_bias=use_bias,
                         )
                 
-                conv_rs = conv_layer(input_tensor_split)
-
-                # (gp) Weight tensor must be of the same dtype as input_tensor.
-                input_weights = tf.cast(input_weights, tf.float32) if input_weights.dtype != tf.float32 else input_weights
-
-                if use_bias:
-                    if isinstance(act, tf.keras.layers.PReLU):
-                        conv_layer.set_weights([input_weights, input_bias, np.ones((1, 1, num_filters))])
-                    else:
-                        conv_layer.set_weights([input_weights, input_bias])
+                optimization_for_gpu_delegate: bool = kwargs['optimization_for_gpu_delegate']
+                if not optimization_for_gpu_delegate:
+                    conv_rs = conv_func(
+                        input=input_tensor_split,
+                        filters=weight_split \
+                            if not isinstance(weight_split, np.ndarray) \
+                                else tf.convert_to_tensor(weight_split),
+                        output_shape=split_conv_output_shape,
+                        strides=strides,
+                        padding=pad_mode,
+                        dilations=dilations,
+                    )
                 else:
-                    if isinstance(act, tf.keras.layers.PReLU):
-                        conv_layer.set_weights([input_weights, np.ones((1, 1, num_filters))])
+                    warn("(gp) Applying ConvTranspose for GPU fix")
+                    conv_rs = conv_layer(input_tensor_split)
+
+                    # (gp) Weight tensor must be of the same dtype as input_tensor.
+                    input_weights = tf.cast(input_weights, tf.float32) if input_weights.dtype != tf.float32 else input_weights
+
+                    if use_bias:
+                        if isinstance(act, tf.keras.layers.PReLU):
+                            conv_layer.set_weights([input_weights, input_bias, np.ones((1, 1, num_filters))])
+                        else:
+                            conv_layer.set_weights([input_weights, input_bias])
                     else:
-                        conv_layer.set_weights([input_weights])
+                        if isinstance(act, tf.keras.layers.PReLU):
+                            conv_layer.set_weights([input_weights, np.ones((1, 1, num_filters))])
+                        else:
+                            conv_layer.set_weights([input_weights])
 
             except Exception as ex1:
                 # Shape Unmatch Error Mitigation Measures
